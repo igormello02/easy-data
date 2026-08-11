@@ -1,4 +1,5 @@
 import 'package:easy_data/app/app.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -30,9 +31,7 @@ void main() {
     expect(find.text('Cancelar'), findsOneWidget);
   });
 
-  testWidgets('A data source option opens the provisional editor', (
-    tester,
-  ) async {
+  testWidgets('A data source option opens the data editor', (tester) async {
     await tester.pumpWidget(const EasyDataApp());
 
     await tester.tap(find.text('Criar gráfico'));
@@ -40,10 +39,8 @@ void main() {
     await tester.tap(find.text('Colar do Excel'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Editor de Dados'), findsWidgets);
-    expect(
-      find.text('A entrada de dados será implementada em uma próxima sprint.'),
-      findsOneWidget,
-    );
+    expect(find.text('Dados'), findsOneWidget);
+    expect(find.byKey(const ValueKey('cell-0-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('cell-0-1')), findsOneWidget);
   });
 }
