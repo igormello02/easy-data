@@ -17,49 +17,74 @@ class DataSourceBottomSheet extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Criar gráfico',
-            style: textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Criar gráfico',
+                  style: textTheme.titleLarge?.copyWith(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Como deseja inserir os dados?',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFF737373),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Como deseja inserir os dados?',
-            style: textTheme.bodyLarge?.copyWith(
-              color: const Color(0xFF525252),
-            ),
-          ),
-          const SizedBox(height: 20),
+          const Divider(height: 1, color: Color(0xFFE8E8E8)),
           _DataSourceTile(
-            icon: Icons.content_paste_rounded,
+            icon: Icons.assignment_outlined,
             title: 'Colar do Excel',
             subtitle: 'Cole dados copiados da planilha',
             onTap: () => _openEditor(context),
           ),
-          const SizedBox(height: 10),
+          const Divider(height: 1, indent: 24, endIndent: 24),
           _DataSourceTile(
-            icon: Icons.upload_file_rounded,
+            icon: Icons.upload_file_outlined,
             title: 'Importar CSV',
             subtitle: 'Selecione um arquivo do dispositivo',
             onTap: () => _openEditor(context),
           ),
-          const SizedBox(height: 10),
+          const Divider(height: 1, indent: 24, endIndent: 24),
           _DataSourceTile(
-            icon: Icons.edit_note_rounded,
+            icon: Icons.add_box_outlined,
             title: 'Digitar manualmente',
             subtitle: 'Insira os dados linha por linha',
             onTap: () => _openEditor(context),
           ),
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            child: SizedBox(
+              height: 48,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF444444),
+                  backgroundColor: const Color(0xFFF5F5F5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                child: const Text('Cancelar'),
+              ),
+            ),
           ),
         ],
       ),
@@ -82,17 +107,56 @@ class _DataSourceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFF7F7F7),
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Icon(icon),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right_rounded),
+    return InkWell(
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 72),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF4F4F4),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 20, color: const Color(0xFF555555)),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF8A8A8A),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 22,
+                color: Color(0xFFB8B8B8),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

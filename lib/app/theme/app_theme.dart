@@ -5,7 +5,7 @@ abstract final class AppTheme {
     const colorScheme = ColorScheme.light(
       primary: Color(0xFF171717),
       onPrimary: Colors.white,
-      surface: Color(0xFFFAFAFA),
+      surface: Colors.white,
       onSurface: Color(0xFF171717),
       outline: Color(0xFFD4D4D4),
       outlineVariant: Color(0xFFE5E5E5),
@@ -14,16 +14,16 @@ abstract final class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: colorScheme.surface,
+      scaffoldBackgroundColor: Colors.white,
       appBarTheme: const AppBarTheme(
         centerTitle: false,
-        backgroundColor: Color(0xFFFAFAFA),
+        backgroundColor: Colors.white,
         foregroundColor: Color(0xFF171717),
         surfaceTintColor: Colors.transparent,
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(56),
+          minimumSize: const Size.fromHeight(50),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -34,8 +34,10 @@ abstract final class AppTheme {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         showDragHandle: true,
+        dragHandleColor: Color(0xFFD4D4D4),
+        dragHandleSize: Size(34, 4),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
     );
