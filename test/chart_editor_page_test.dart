@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:easy_data/features/chart_editor/chart_editor_page.dart';
 import 'package:easy_data/features/chart_editor/models/chart_data.dart';
 import 'package:easy_data/features/chart_editor/models/chart_type_styles.dart';
+import 'package:easy_data/features/export/chart_export_service.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +19,16 @@ void main() {
 
   Widget buildEditor() {
     return const MaterialApp(home: ChartEditorPage(data: data));
+  }
+
+  ChartExportService successfulExport({VoidCallback? onCapture}) {
+    return ChartExportService(
+      capturePng: (_) async {
+        onCapture?.call();
+        return Uint8List.fromList([137, 80, 78, 71]);
+      },
+      savePng: (_, _) async => true,
+    );
   }
 
   Future<void> expandOptions(WidgetTester tester) async {
@@ -58,6 +71,79 @@ void main() {
         .map((group) => group.barRods.single.toY)
         .toList();
     expect(values, [4200, 5800, 5100]);
+  });
+
+  testWidgets('enables Exportar and triggers chart capture', (tester) async {
+    var captureCalled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChartEditorPage(
+          data: data,
+          exportService: successfulExport(
+            onCapture: () => captureCalled = true,
+          ),
+        ),
+      ),
+    );
+
+    final button = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('export-chart')),
+    );
+    expect(button.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('export-chart')));
+    await tester.pumpAndSettle();
+
+    expect(captureCalled, isTrue);
+    expect(find.text('Gráfico exportado com sucesso.'), findsOneWidget);
+  });
+
+  testWidgets('handles export failures without crashing', (tester) async {
+    final service = ChartExportService(
+      capturePng: (_) async => throw StateError('capture failed'),
+      savePng: (_, _) async => true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChartEditorPage(data: data, exportService: service),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('export-chart')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Não foi possível exportar o gráfico.'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('export-chart')))
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('export boundary contains the selected chart type', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChartEditorPage(data: data, exportService: successfulExport()),
+      ),
+    );
+    await selectType(tester, 'lines');
+
+    final canvas = find.byKey(const ValueKey('chart-export-canvas'));
+    expect(
+      find.descendant(of: canvas, matching: find.byType(LineChart)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: canvas, matching: find.byType(BarChart)),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('export-chart')));
+    await tester.pumpAndSettle();
+    expect(find.text('Gráfico exportado com sucesso.'), findsOneWidget);
   });
 
   testWidgets('shows and immediately updates the chart title', (tester) async {

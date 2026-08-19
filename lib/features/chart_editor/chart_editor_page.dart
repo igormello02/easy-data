@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../export/chart_export_service.dart';
 import 'models/chart_data.dart';
 import 'models/chart_style.dart';
 import 'models/chart_type.dart';
@@ -9,9 +10,10 @@ import 'widgets/line_chart_preview.dart';
 import 'widgets/pie_chart_preview.dart';
 
 class ChartEditorPage extends StatefulWidget {
-  const ChartEditorPage({super.key, required this.data});
+  const ChartEditorPage({super.key, required this.data, this.exportService});
 
   final ChartData data;
+  final ChartExportService? exportService;
 
   @override
   State<ChartEditorPage> createState() => _ChartEditorPageState();
@@ -22,6 +24,40 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
   ChartTypeStyles _typeStyles = const ChartTypeStyles();
   ChartType _selectedType = ChartType.bar;
   bool _showAdvancedOptions = false;
+  final GlobalKey _exportBoundaryKey = GlobalKey();
+  late final ChartExportService _exportService;
+  bool _isExporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _exportService = widget.exportService ?? ChartExportService();
+  }
+
+  Future<void> _exportChart() async {
+    if (_isExporting) return;
+    setState(() => _isExporting = true);
+
+    try {
+      await _exportService.export(
+        boundaryKey: _exportBoundaryKey,
+        fileName: ChartExportService.createFileName(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gráfico exportado com sucesso.')),
+      );
+    } on ChartExportCancelled {
+      // Cancelar o seletor nativo não é uma falha e não exige mensagem.
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível exportar o gráfico.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
 
   void _updateStyle(ChartStyle style) {
     setState(() => _style = style);
@@ -77,12 +113,17 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
             padding: const EdgeInsets.only(right: 16),
             child: FilledButton(
               key: const ValueKey('export-chart'),
-              onPressed: null,
+              onPressed: _isExporting ? null : _exportChart,
               style: FilledButton.styleFrom(
                 minimumSize: const Size(84, 44),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
-              child: const Text('Exportar'),
+              child: _isExporting
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Exportar'),
             ),
           ),
         ],
@@ -98,7 +139,14 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(height: 300, child: _buildPreview()),
+              RepaintBoundary(
+                key: _exportBoundaryKey,
+                child: ColoredBox(
+                  key: const ValueKey('chart-export-canvas'),
+                  color: Colors.white,
+                  child: SizedBox(height: 300, child: _buildPreview()),
+                ),
+              ),
               const SizedBox(height: 24),
               _ChartTypeSelector(
                 selectedType: _selectedType,
