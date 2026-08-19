@@ -1,11 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../models/chart_data.dart';
+import '../models/chart_element_overrides.dart';
 import '../models/chart_selection.dart';
 import '../models/chart_style.dart';
 import '../models/chart_type.dart';
 import '../models/chart_type_styles.dart';
+import 'chart_interaction_overlay.dart';
 
 class PieChartPreview extends StatelessWidget {
   const PieChartPreview({
@@ -17,6 +21,7 @@ class PieChartPreview extends StatelessWidget {
     required this.selection,
     required this.onSelectionChanged,
     required this.onClearSelection,
+    required this.overrides,
   });
 
   static const palette = [
@@ -35,6 +40,7 @@ class PieChartPreview extends StatelessWidget {
   final ChartSelection? selection;
   final ValueChanged<ChartSelection> onSelectionChanged;
   final VoidCallback onClearSelection;
+  final ChartElementOverrides overrides;
 
   bool _isSelected(ChartElementType type, [int? index]) {
     return selection?.elementType == type &&
@@ -46,6 +52,10 @@ class PieChartPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final titleOverride = overrides.resolve(
+      chartType: ChartType.pie,
+      elementType: ChartElementType.title,
+    );
     return GestureDetector(
       onTap: freeMode ? onClearSelection : null,
       behavior: HitTestBehavior.translucent,
@@ -78,12 +88,16 @@ class PieChartPreview extends StatelessWidget {
                   child: Text(
                     style.title,
                     key: const ValueKey('chart-preview-title'),
-                    textAlign: TextAlign.center,
+                    textAlign: _textAlign(titleOverride.alignment),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: style.titleSize,
-                      fontWeight: FontWeight.w600,
+                      color: Color(titleOverride.color ?? 0xFF171717),
+                      fontSize: titleOverride.size ?? style.titleSize,
+                      fontWeight: _fontWeight(
+                        titleOverride.fontWeight,
+                        FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -119,53 +133,105 @@ class PieChartPreview extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: PieChart(
-            PieChartData(
-              centerSpaceRadius: radius * pieStyle.pieHolePercent / 100,
-              sectionsSpace: 2,
-              pieTouchData: PieTouchData(
-                enabled: freeMode,
-                touchCallback: (event, response) {
-                  if (event is! FlTapUpEvent) return;
-                  final index = response?.touchedSection?.touchedSectionIndex;
-                  if (index == null ||
-                      index < 0 ||
-                      index >= data.points.length) {
-                    onClearSelection();
-                    return;
-                  }
-                  final point = data.points[index];
-                  onSelectionChanged(
-                    ChartSelection(
-                      elementType: ChartElementType.dataElement,
-                      chartType: ChartType.pie,
-                      index: index,
-                      category: point.category,
-                      value: point.value,
+          child: LayoutBuilder(
+            builder: (context, constraints) => Stack(
+              children: [
+                Positioned.fill(
+                  child: PieChart(
+                    PieChartData(
+                      centerSpaceRadius: radius * pieStyle.pieHolePercent / 100,
+                      sectionsSpace: 2,
+                      pieTouchData: PieTouchData(
+                        enabled: freeMode,
+                        touchCallback: (event, response) {
+                          if (event is! FlTapUpEvent) return;
+                          final index =
+                              response?.touchedSection?.touchedSectionIndex;
+                          if (index == null ||
+                              index < 0 ||
+                              index >= data.points.length) {
+                            onClearSelection();
+                            return;
+                          }
+                          final point = data.points[index];
+                          onSelectionChanged(
+                            ChartSelection(
+                              elementType: ChartElementType.dataElement,
+                              chartType: ChartType.pie,
+                              index: index,
+                              category: point.category,
+                              value: point.value,
+                            ),
+                          );
+                        },
+                      ),
+                      sections: [
+                        for (var index = 0; index < data.points.length; index++)
+                          PieChartSectionData(
+                            value: data.points[index].value,
+                            color: Color(
+                              overrides
+                                      .resolve(
+                                        chartType: ChartType.pie,
+                                        elementType:
+                                            ChartElementType.dataElement,
+                                        index: index,
+                                      )
+                                      .color ??
+                                  palette[index % palette.length].toARGB32(),
+                            ),
+                            radius:
+                                _isSelected(ChartElementType.dataElement, index)
+                                ? radius + 7 + _sliceEmphasis(index)
+                                : radius + _sliceEmphasis(index),
+                            title: '',
+                            titleStyle: TextStyle(
+                              color: Color(
+                                overrides
+                                        .resolve(
+                                          chartType: ChartType.pie,
+                                          elementType:
+                                              ChartElementType.dataLabel,
+                                          index: index,
+                                        )
+                                        .color ??
+                                    0xFFFFFFFF,
+                              ),
+                              fontSize:
+                                  overrides
+                                      .resolve(
+                                        chartType: ChartType.pie,
+                                        elementType: ChartElementType.dataLabel,
+                                        index: index,
+                                      )
+                                      .size ??
+                                  11,
+                              fontWeight: _fontWeight(
+                                overrides
+                                    .resolve(
+                                      chartType: ChartType.pie,
+                                      elementType: ChartElementType.dataLabel,
+                                      index: index,
+                                    )
+                                    .fontWeight,
+                                FontWeight.w700,
+                              ),
+                              backgroundColor:
+                                  _isSelected(ChartElementType.dataLabel, index)
+                                  ? const Color(0x99000000)
+                                  : null,
+                            ),
+                          ),
+                      ],
                     ),
-                  );
-                },
-              ),
-              sections: [
-                for (var index = 0; index < data.points.length; index++)
-                  PieChartSectionData(
-                    value: data.points[index].value,
-                    color: palette[index % palette.length],
-                    radius: _isSelected(ChartElementType.dataElement, index)
-                        ? radius + 7
-                        : radius,
-                    title: style.showValues
-                        ? '${(data.points[index].value / total * 100).toStringAsFixed(0)}%'
-                        : '',
-                    titleStyle: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    duration: const Duration(milliseconds: 200),
                   ),
+                ),
+                if (style.showValues)
+                  for (var index = 0; index < data.points.length; index++)
+                    _buildPieDataLabel(index, total, constraints),
               ],
             ),
-            duration: const Duration(milliseconds: 200),
           ),
         ),
         const SizedBox(height: 8),
@@ -194,6 +260,11 @@ class PieChartPreview extends StatelessWidget {
                         );
                       }
                     : null,
+                textOverride: overrides.resolve(
+                  chartType: ChartType.pie,
+                  elementType: ChartElementType.legendItem,
+                  index: index,
+                ),
               ),
           ],
         ),
@@ -208,6 +279,85 @@ class PieChartPreview extends StatelessWidget {
       borderRadius: BorderRadius.circular(4),
     );
   }
+
+  double _sliceEmphasis(int index) =>
+      overrides
+          .resolve(
+            chartType: ChartType.pie,
+            elementType: ChartElementType.dataElement,
+            index: index,
+          )
+          .size ??
+      0;
+
+  Widget _buildPieDataLabel(
+    int index,
+    double total,
+    BoxConstraints constraints,
+  ) {
+    var start = -math.pi / 2;
+    for (var current = 0; current < index; current++) {
+      start += data.points[current].value / total * math.pi * 2;
+    }
+    final sweep = data.points[index].value / total * math.pi * 2;
+    final angle = start + sweep / 2;
+    const outerRadius = 62.0;
+    final holeRadius = outerRadius * pieStyle.pieHolePercent / 100;
+    final labelRadius = holeRadius + (outerRadius - holeRadius) * 0.58;
+    final centerX = constraints.maxWidth / 2;
+    final centerY = constraints.maxHeight / 2;
+    final point = data.points[index];
+    final text = '${(point.value / total * 100).toStringAsFixed(0)}%';
+    final labelOverride = overrides.resolve(
+      chartType: ChartType.pie,
+      elementType: ChartElementType.dataLabel,
+      index: index,
+    );
+    final effectiveStyle = const ChartElementStyleOverride(
+      color: 0xFFFFFFFF,
+      size: 11,
+      fontWeight: ChartFontWeight.bold,
+    ).merge(labelOverride);
+    return Positioned(
+      key: ValueKey('data-label-position-$index'),
+      left: centerX + math.cos(angle) * labelRadius - 25,
+      top: centerY + math.sin(angle) * labelRadius - 16,
+      width: 50,
+      height: 32,
+      child: ChartDataLabel(
+        key: ValueKey('select-data-label-$index'),
+        text: text,
+        style: effectiveStyle,
+        selected: _isSelected(ChartElementType.dataLabel, index),
+        onTap: freeMode
+            ? () => onSelectionChanged(
+                ChartSelection(
+                  elementType: ChartElementType.dataLabel,
+                  chartType: ChartType.pie,
+                  index: index,
+                  category: point.category,
+                  value: point.value,
+                  text: text,
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
+  FontWeight _fontWeight(ChartFontWeight? weight, FontWeight fallback) =>
+      switch (weight) {
+        ChartFontWeight.normal => FontWeight.w400,
+        ChartFontWeight.semibold => FontWeight.w600,
+        ChartFontWeight.bold => FontWeight.w700,
+        null => fallback,
+      };
+
+  TextAlign _textAlign(ChartTextAlignment? alignment) => switch (alignment) {
+    ChartTextAlignment.left => TextAlign.left,
+    ChartTextAlignment.center || null => TextAlign.center,
+    ChartTextAlignment.right => TextAlign.right,
+  };
 }
 
 class _LegendItem extends StatelessWidget {
@@ -217,12 +367,14 @@ class _LegendItem extends StatelessWidget {
     required this.category,
     required this.selected,
     required this.onTap,
+    required this.textOverride,
   });
 
   final Color color;
   final String category;
   final bool selected;
   final VoidCallback? onTap;
+  final ChartElementStyleOverride textOverride;
 
   @override
   Widget build(BuildContext context) {
@@ -251,7 +403,16 @@ class _LegendItem extends StatelessWidget {
                 category,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 10, color: Color(0xFF666666)),
+                style: TextStyle(
+                  fontSize: textOverride.size ?? 10,
+                  color: Color(textOverride.color ?? 0xFF666666),
+                  fontWeight: switch (textOverride.fontWeight) {
+                    ChartFontWeight.normal => FontWeight.w400,
+                    ChartFontWeight.semibold => FontWeight.w600,
+                    ChartFontWeight.bold => FontWeight.w700,
+                    null => FontWeight.normal,
+                  },
+                ),
               ),
             ),
           ],

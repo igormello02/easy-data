@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:easy_data/features/chart_editor/chart_editor_page.dart';
 import 'package:easy_data/features/chart_editor/models/chart_data.dart';
+import 'package:easy_data/features/chart_editor/models/chart_element_overrides.dart';
 import 'package:easy_data/features/chart_editor/models/chart_sort_order.dart';
 import 'package:easy_data/features/chart_editor/models/chart_selection.dart';
 import 'package:easy_data/features/chart_editor/models/chart_type.dart';
@@ -80,6 +82,43 @@ void main() {
     final tile = tester.widget<SwitchListTile>(switchTile);
     tile.onChanged!(enabled);
     await tester.pump();
+  }
+
+  void selectElement(WidgetTester tester, ChartSelection selection) {
+    switch (selection.chartType) {
+      case ChartType.bar:
+        tester
+            .widget<BarChartPreview>(find.byType(BarChartPreview))
+            .onSelectionChanged(selection);
+      case ChartType.line:
+        tester
+            .widget<LineChartPreview>(find.byType(LineChartPreview))
+            .onSelectionChanged(selection);
+      case ChartType.pie:
+        tester
+            .widget<PieChartPreview>(find.byType(PieChartPreview))
+            .onSelectionChanged(selection);
+    }
+  }
+
+  void chooseContextColor(WidgetTester tester, int paletteIndex) {
+    tester
+        .widget<IconButton>(find.byKey(ValueKey('context-color-$paletteIndex')))
+        .onPressed!();
+  }
+
+  void changeContextSize(WidgetTester tester, double value) {
+    tester
+        .widget<Slider>(find.byKey(const ValueKey('context-size-slider')))
+        .onChanged!(value);
+  }
+
+  void applyContextToAll(WidgetTester tester) {
+    tester
+        .widget<SegmentedButton<bool>>(
+          find.byKey(const ValueKey('selection-scope')),
+        )
+        .onSelectionChanged!({true});
   }
 
   testWidgets('renders a bar chart with valid data', (tester) async {
@@ -350,6 +389,597 @@ void main() {
     expect(data.points, orderedEquals(original));
   });
 
+  testWidgets('edits one bar and then applies properties to all bars', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.dataElement,
+        chartType: ChartType.bar,
+        index: 1,
+        category: 'Fevereiro',
+        value: 5800,
+      ),
+    );
+    await tester.pump();
+
+    chooseContextColor(tester, 4);
+    changeContextSize(tester, 30);
+    await tester.pump();
+    var rods = currentChart(
+      tester,
+    ).data.barGroups.map((group) => group.barRods.single).toList();
+    expect(rods[0].color, const Color(0xFF171717));
+    expect(rods[1].color, const Color(0xFFDC5A3A));
+    expect(rods[1].width, 30);
+    expect(rods[2].width, 20);
+
+    applyContextToAll(tester);
+    await tester.pump();
+    chooseContextColor(tester, 1);
+    changeContextSize(tester, 26);
+    await tester.pump();
+    rods = currentChart(
+      tester,
+    ).data.barGroups.map((group) => group.barRods.single).toList();
+    expect(rods.map((rod) => rod.color), everyElement(const Color(0xFF2563EB)));
+    expect(rods.map((rod) => rod.width), everyElement(26));
+  });
+
+  testWidgets('edits one label and all X axis labels', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.xAxisLabel,
+        chartType: ChartType.bar,
+        index: 0,
+        category: 'Janeiro',
+        value: 4200,
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    changeContextSize(tester, 14);
+    await tester.pump();
+
+    Text label(int index) => tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(ValueKey('select-x-label-$index')),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(label(0).style?.color, const Color(0xFFDC5A3A));
+    expect(label(0).style?.fontSize, 14);
+    expect(label(1).style?.color, const Color(0xFF777777));
+
+    applyContextToAll(tester);
+    await tester.pump();
+    chooseContextColor(tester, 2);
+    await tester.pump();
+    expect(label(0).style?.color, const Color(0xFF0F766E));
+    expect(label(1).style?.color, const Color(0xFF0F766E));
+  });
+
+  testWidgets('edits title size color weight and alignment', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.title,
+        chartType: ChartType.bar,
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    changeContextSize(tester, 24);
+    tester
+        .widget<SegmentedButton<ChartFontWeight>>(
+          find.byKey(const ValueKey('context-font-weight')),
+        )
+        .onSelectionChanged!({ChartFontWeight.bold});
+    tester
+        .widget<SegmentedButton<ChartTextAlignment>>(
+          find.byKey(const ValueKey('context-alignment')),
+        )
+        .onSelectionChanged!({ChartTextAlignment.left});
+    await tester.pump();
+
+    final title = tester.widget<Text>(
+      find.byKey(const ValueKey('chart-preview-title')),
+    );
+    expect(title.style?.color, const Color(0xFFDC5A3A));
+    expect(title.style?.fontSize, 24);
+    expect(title.style?.fontWeight, FontWeight.w700);
+    expect(title.textAlign, TextAlign.left);
+  });
+
+  testWidgets('edits line points individually and globally', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    await selectType(tester, 'lines');
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.dataElement,
+        chartType: ChartType.line,
+        index: 1,
+        category: 'Fevereiro',
+        value: 5800,
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    changeContextSize(tester, 8);
+    await tester.pump();
+
+    FlDotCirclePainter pointPainter(int index) {
+      final line = tester
+          .widget<LineChart>(find.byType(LineChart))
+          .data
+          .lineBarsData
+          .single;
+      return line.dotData.getDotPainter(line.spots[index], 1, line, index)
+          as FlDotCirclePainter;
+    }
+
+    expect(pointPainter(0).radius, 4);
+    expect(pointPainter(1).radius, 11);
+    expect(pointPainter(1).color, const Color(0xFFDC5A3A));
+
+    applyContextToAll(tester);
+    await tester.pump();
+    chooseContextColor(tester, 1);
+    changeContextSize(tester, 6);
+    await tester.pump();
+    expect(pointPainter(0).color, const Color(0xFF2563EB));
+    expect(pointPainter(2).color, const Color(0xFF2563EB));
+  });
+
+  testWidgets('edits a pie slice and one legend item', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    await selectType(tester, 'pie');
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.dataElement,
+        chartType: ChartType.pie,
+        index: 1,
+        category: 'Fevereiro',
+        value: 5800,
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    changeContextSize(tester, 10);
+    await tester.pump();
+    var sections = tester.widget<PieChart>(find.byType(PieChart)).data.sections;
+    expect(sections[0].color, const Color(0xFF2563EB));
+    expect(sections[1].color, const Color(0xFFDC5A3A));
+    expect(sections[1].radius, 79);
+
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.legendItem,
+        chartType: ChartType.pie,
+        index: 0,
+        category: 'Janeiro',
+        value: 4200,
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 2);
+    changeContextSize(tester, 16);
+    await tester.pump();
+    final legendText = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('select-legend-0')),
+        matching: find.text('Janeiro'),
+      ),
+    );
+    expect(legendText.style?.color, const Color(0xFF0F766E));
+    expect(legendText.style?.fontSize, 16);
+    sections = tester.widget<PieChart>(find.byType(PieChart)).data.sections;
+    expect(sections[1].color, const Color(0xFFDC5A3A));
+  });
+
+  testWidgets('preserves type-specific overrides while switching charts', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.dataElement,
+        chartType: ChartType.bar,
+        index: 0,
+        category: 'Janeiro',
+        value: 4200,
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    await tester.pump();
+
+    await selectType(tester, 'lines');
+    final line = tester
+        .widget<LineChart>(find.byType(LineChart))
+        .data
+        .lineBarsData
+        .single;
+    final linePoint =
+        line.dotData.getDotPainter(line.spots[0], 1, line, 0)
+            as FlDotCirclePainter;
+    expect(linePoint.color, const Color(0xFF171717));
+
+    await selectType(tester, 'bars');
+    expect(
+      currentChart(tester).data.barGroups.first.barRods.single.color,
+      const Color(0xFFDC5A3A),
+    );
+  });
+
+  testWidgets('export keeps overrides and hides selection feedback', (
+    tester,
+  ) async {
+    final captureCompleter = Completer<Uint8List>();
+    final service = ChartExportService(
+      capturePng: (_) => captureCompleter.future,
+      savePng: (_, _) async => true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChartEditorPage(data: data, exportService: service),
+      ),
+    );
+    await expandOptions(tester);
+    await tapOption(tester, 'show-values');
+    await setFreeMode(tester, true);
+    final xAxisTarget = find.byKey(const ValueKey('select-x-axis-line'));
+    await tester.ensureVisible(xAxisTarget);
+    await tester.tap(xAxisTarget);
+    await tester.pump();
+    chooseContextColor(tester, 1);
+    changeContextSize(tester, 4);
+    await tester.pump();
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.dataLabel,
+        chartType: ChartType.bar,
+        index: 0,
+        category: 'Janeiro',
+        value: 4200,
+        text: '4200',
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    await tester.pump();
+
+    final export = find.byKey(const ValueKey('export-chart'));
+    await tester.ensureVisible(export);
+    await tester.tap(export);
+    await tester.pump();
+
+    final preview = tester.widget<BarChartPreview>(
+      find.byType(BarChartPreview),
+    );
+    expect(preview.selection, isNull);
+    final exportedLabel = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('select-data-label-0')),
+        matching: find.text('4200'),
+      ),
+    );
+    expect(exportedLabel.style?.color, const Color(0xFFDC5A3A));
+    final labelContainer = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('select-data-label-0')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(labelContainer.decoration, isNull);
+    final exportedBorder = currentChart(tester).data.borderData.border;
+    expect(exportedBorder.bottom.color, const Color(0xFF2563EB));
+    expect(exportedBorder.bottom.width, 4);
+
+    await tester.runAsync(() async {
+      captureCompleter.complete(Uint8List.fromList([137, 80, 78, 71]));
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pump();
+  });
+
+  testWidgets('edits one Y axis label and then all Y axis labels', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.yAxisLabel,
+        chartType: ChartType.bar,
+        index: 1,
+        value: 2000,
+        text: '2.0k',
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    changeContextSize(tester, 14);
+    tester
+        .widget<SegmentedButton<ChartFontWeight>>(
+          find.byKey(const ValueKey('context-font-weight')),
+        )
+        .onSelectionChanged!({ChartFontWeight.bold});
+    await tester.pump();
+
+    Text yLabel(int index) => tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(ValueKey('select-y-label-$index')),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(yLabel(1).style?.color, const Color(0xFFDC5A3A));
+    expect(yLabel(1).style?.fontSize, 14);
+    expect(yLabel(1).style?.fontWeight, FontWeight.w700);
+    expect(yLabel(0).style?.color, const Color(0xFF8A8A8A));
+
+    applyContextToAll(tester);
+    await tester.pump();
+    chooseContextColor(tester, 2);
+    await tester.pump();
+    expect(yLabel(0).style?.color, const Color(0xFF0F766E));
+    expect(yLabel(1).style?.color, const Color(0xFF0F766E));
+  });
+
+  testWidgets('edits one bar data label and all bar data labels', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await expandOptions(tester);
+    await tapOption(tester, 'show-values');
+    await setFreeMode(tester, true);
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.dataLabel,
+        chartType: ChartType.bar,
+        index: 1,
+        category: 'Fevereiro',
+        value: 5800,
+        text: '5800',
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    changeContextSize(tester, 16);
+    await tester.pump();
+
+    TextStyle dataLabelStyle(int index) {
+      final chart = currentChart(tester).data;
+      final group = chart.barGroups[index];
+      return chart.barTouchData.touchTooltipData
+          .getTooltipItem(group, index, group.barRods.single, 0)!
+          .textStyle;
+    }
+
+    expect(dataLabelStyle(0).color, const Color(0xFF555555));
+    expect(dataLabelStyle(1).color, const Color(0xFFDC5A3A));
+    expect(dataLabelStyle(1).fontSize, 16);
+
+    applyContextToAll(tester);
+    await tester.pump();
+    chooseContextColor(tester, 1);
+    await tester.pump();
+    expect(dataLabelStyle(0).color, const Color(0xFF2563EB));
+    expect(dataLabelStyle(2).color, const Color(0xFF2563EB));
+  });
+
+  testWidgets('keeps data label overrides separate for line and pie', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await expandOptions(tester);
+    await tapOption(tester, 'show-values');
+    await setFreeMode(tester, true);
+
+    await selectType(tester, 'lines');
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.dataLabel,
+        chartType: ChartType.line,
+        index: 0,
+        category: 'Janeiro',
+        value: 4200,
+        text: '4200',
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 4);
+    await tester.pump();
+    final lineChart = tester.widget<LineChart>(find.byType(LineChart)).data;
+    final lineLabel = lineChart.lineTouchData.touchTooltipData.getTooltipItems([
+      LineBarSpot(lineChart.lineBarsData.single, 0, const FlSpot(0, 4200)),
+    ]).single;
+    expect(lineLabel?.textStyle.color, const Color(0xFFDC5A3A));
+
+    await selectType(tester, 'pie');
+    var sections = tester.widget<PieChart>(find.byType(PieChart)).data.sections;
+    expect(sections[0].titleStyle?.color, Colors.white);
+    selectElement(
+      tester,
+      const ChartSelection(
+        elementType: ChartElementType.dataLabel,
+        chartType: ChartType.pie,
+        index: 0,
+        category: 'Janeiro',
+        value: 4200,
+        text: '28%',
+      ),
+    );
+    await tester.pump();
+    chooseContextColor(tester, 2);
+    await tester.pump();
+    sections = tester.widget<PieChart>(find.byType(PieChart)).data.sections;
+    expect(sections[0].titleStyle?.color, const Color(0xFF0F766E));
+
+    await selectType(tester, 'lines');
+    final restoredLine = tester.widget<LineChart>(find.byType(LineChart)).data;
+    final restoredLabel = restoredLine.lineTouchData.touchTooltipData
+        .getTooltipItems([
+          LineBarSpot(
+            restoredLine.lineBarsData.single,
+            0,
+            const FlSpot(0, 4200),
+          ),
+        ])
+        .single;
+    expect(restoredLabel?.textStyle.color, const Color(0xFFDC5A3A));
+  });
+
+  testWidgets('data labels have real tap targets in bar line and pie', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await expandOptions(tester);
+    await tapOption(tester, 'show-values');
+    await setFreeMode(tester, true);
+
+    Future<void> tapDataLabel(String expectedPanelLabel) async {
+      final target = find.byKey(const ValueKey('select-data-label-0'));
+      await tester.ensureVisible(target);
+      await tester.tap(target);
+      await tester.pump();
+      expect(find.text(expectedPanelLabel), findsOneWidget);
+      expect(find.text('Categoria: Janeiro'), findsOneWidget);
+      expect(find.text('Valor: 4200'), findsOneWidget);
+    }
+
+    await tapDataLabel('Rótulo de dado selecionado');
+    expect(
+      tester
+          .widget<BarChartPreview>(find.byType(BarChartPreview))
+          .selection
+          ?.elementType,
+      ChartElementType.dataLabel,
+    );
+
+    await selectType(tester, 'lines');
+    expect(find.byKey(const ValueKey('select-data-label-0')), findsOneWidget);
+    await tapDataLabel('Rótulo de dado selecionado');
+    expect(
+      tester
+          .widget<LineChartPreview>(find.byType(LineChartPreview))
+          .selection
+          ?.elementType,
+      ChartElementType.dataLabel,
+    );
+
+    await selectType(tester, 'pie');
+    await tapDataLabel('Rótulo de dado selecionado');
+    expect(
+      tester
+          .widget<PieChartPreview>(find.byType(PieChartPreview))
+          .selection
+          ?.elementType,
+      ChartElementType.dataLabel,
+    );
+  });
+
+  testWidgets('line values are positioned widgets above the chart points', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await expandOptions(tester);
+    await tapOption(tester, 'show-values');
+    await selectType(tester, 'lines');
+
+    expect(find.byKey(const ValueKey('select-data-label-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('select-data-label-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('select-data-label-2')), findsOneWidget);
+    for (var index = 0; index < 3; index++) {
+      final positioned = tester.widget<Positioned>(
+        find.byKey(ValueKey('data-label-position-$index')),
+      );
+      expect(positioned.top, isNotNull);
+      expect(positioned.height, 28);
+    }
+  });
+
+  testWidgets('axis and grid lines are selectable and editable', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+
+    final xAxis = find.byKey(const ValueKey('select-x-axis-line'));
+    await tester.ensureVisible(xAxis);
+    await tester.tap(xAxis);
+    await tester.pump();
+    expect(find.text('Linha do eixo X'), findsOneWidget);
+    chooseContextColor(tester, 4);
+    changeContextSize(tester, 4);
+    await tester.pump();
+    var border = currentChart(tester).data.borderData.border;
+    expect(border.bottom.color, const Color(0xFFDC5A3A));
+    expect(border.bottom.width, 5);
+
+    final yAxis = find.byKey(const ValueKey('select-y-axis-line'));
+    await tester.ensureVisible(yAxis);
+    await tester.tap(yAxis);
+    await tester.pump();
+    expect(find.text('Linha do eixo Y'), findsOneWidget);
+    chooseContextColor(tester, 2);
+    changeContextSize(tester, 3);
+    await tester.pump();
+    border = currentChart(tester).data.borderData.border;
+    expect(border.left.color, const Color(0xFF0F766E));
+    expect(border.left.width, 4);
+
+    final gridTargets = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> && key.value.startsWith('select-grid-');
+    });
+    expect(gridTargets, findsWidgets);
+    final middleGrid = gridTargets.at(1);
+    await tester.ensureVisible(middleGrid);
+    await tester.tap(middleGrid);
+    await tester.pump();
+    expect(find.text('Linhas de grade'), findsOneWidget);
+    chooseContextColor(tester, 1);
+    changeContextSize(tester, 2);
+    await tester.pump();
+    final gridLine = currentChart(
+      tester,
+    ).data.gridData.getDrawingHorizontalLine(0);
+    expect(gridLine.color, const Color(0xFF2563EB));
+    expect(gridLine.strokeWidth, 2.75);
+    tester
+        .widget<Switch>(
+          find.descendant(
+            of: find.byKey(const ValueKey('context-visibility')),
+            matching: find.byType(Switch),
+          ),
+        )
+        .onChanged!(false);
+    await tester.pump();
+    expect(currentChart(tester).data.gridData.show, isFalse);
+  });
+
   testWidgets('sorts categories without losing their values', (tester) async {
     const sortableData = ChartData(
       points: [
@@ -523,14 +1153,9 @@ void main() {
     await tester.pumpWidget(buildEditor());
     await expandOptions(tester);
 
-    expect(
-      currentChart(tester).data.barGroups.first.showingTooltipIndicators,
-      isEmpty,
-    );
+    expect(find.byKey(const ValueKey('select-data-label-0')), findsNothing);
     await tapOption(tester, 'show-values');
-    expect(currentChart(tester).data.barGroups.first.showingTooltipIndicators, [
-      0,
-    ]);
+    expect(find.byKey(const ValueKey('select-data-label-0')), findsOneWidget);
   });
 
   testWidgets('shows and hides the grid', (tester) async {

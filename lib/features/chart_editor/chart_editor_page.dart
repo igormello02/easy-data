@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../export/chart_export_service.dart';
 import 'models/chart_data.dart';
+import 'models/chart_element_overrides.dart';
 import 'models/chart_selection.dart';
 import 'models/chart_sort_order.dart';
 import 'models/chart_style.dart';
@@ -29,6 +30,8 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
   ChartSelection? _selection;
   bool _isFreeMode = false;
   bool _hasShownFreeModeHint = false;
+  ChartElementOverrides _elementOverrides = const ChartElementOverrides();
+  bool _applySelectionToAll = false;
   bool _showAdvancedOptions = false;
   final GlobalKey _exportBoundaryKey = GlobalKey();
   late final ChartExportService _exportService;
@@ -86,6 +89,7 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
         selection: selection,
         onSelectionChanged: _selectElement,
         onClearSelection: _clearSelection,
+        overrides: _elementOverrides,
       ),
       ChartType.line => LineChartPreview(
         data: sortedData,
@@ -95,6 +99,7 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
         selection: selection,
         onSelectionChanged: _selectElement,
         onClearSelection: _clearSelection,
+        overrides: _elementOverrides,
       ),
       ChartType.pie => PieChartPreview(
         data: sortedData,
@@ -104,17 +109,57 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
         selection: selection,
         onSelectionChanged: _selectElement,
         onClearSelection: _clearSelection,
+        overrides: _elementOverrides,
       ),
     };
   }
 
   void _selectElement(ChartSelection selection) {
     if (!_isFreeMode) return;
-    setState(() => _selection = selection);
+    setState(() {
+      _selection = selection;
+      _applySelectionToAll = false;
+    });
   }
 
   void _clearSelection() {
-    if (_selection != null) setState(() => _selection = null);
+    if (_selection != null) {
+      setState(() {
+        _selection = null;
+        _applySelectionToAll = false;
+      });
+    }
+  }
+
+  void _updateSelectedOverride({
+    int? color,
+    double? size,
+    ChartFontWeight? fontWeight,
+    ChartTextAlignment? alignment,
+    bool? visible,
+  }) {
+    final selection = _selection;
+    if (selection == null) return;
+    setState(() {
+      final chartTypes = selection.elementType == ChartElementType.title
+          ? ChartType.values
+          : [selection.chartType];
+      for (final chartType in chartTypes) {
+        _elementOverrides = _elementOverrides.update(
+          chartType: chartType,
+          elementType: selection.elementType,
+          index: selection.index,
+          applyToAll:
+              selection.elementType == ChartElementType.title ||
+              _applySelectionToAll,
+          color: color,
+          size: size,
+          fontWeight: fontWeight,
+          alignment: alignment,
+          visible: visible,
+        );
+      }
+    });
   }
 
   void _setFreeMode(bool enabled) {
@@ -197,6 +242,21 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
                 _SelectionPanel(
                   selection: _selection!,
                   onClose: _clearSelection,
+                  overrides: _elementOverrides,
+                  applyToAll: _applySelectionToAll,
+                  onApplyToAllChanged: (value) =>
+                      setState(() => _applySelectionToAll = value),
+                  onColorChanged: (color) =>
+                      _updateSelectedOverride(color: color),
+                  onSizeChanged: (size) => _updateSelectedOverride(size: size),
+                  onFontWeightChanged: (weight) =>
+                      _updateSelectedOverride(fontWeight: weight),
+                  onAlignmentChanged: (alignment) =>
+                      _updateSelectedOverride(alignment: alignment),
+                  onVisibilityChanged: (visible) =>
+                      _updateSelectedOverride(visible: visible),
+                  style: _style,
+                  typeStyles: _typeStyles,
                 ),
               ],
               const SizedBox(height: 24),
@@ -205,6 +265,7 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
                 onSelected: (type) => setState(() {
                   _selectedType = type;
                   _selection = null;
+                  _applySelectionToAll = false;
                 }),
               ),
               const SizedBox(height: 16),
@@ -307,10 +368,105 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
 }
 
 class _SelectionPanel extends StatelessWidget {
-  const _SelectionPanel({required this.selection, required this.onClose});
+  const _SelectionPanel({
+    required this.selection,
+    required this.onClose,
+    required this.overrides,
+    required this.applyToAll,
+    required this.onApplyToAllChanged,
+    required this.onColorChanged,
+    required this.onSizeChanged,
+    required this.onFontWeightChanged,
+    required this.onAlignmentChanged,
+    required this.onVisibilityChanged,
+    required this.style,
+    required this.typeStyles,
+  });
 
   final ChartSelection selection;
   final VoidCallback onClose;
+  final ChartElementOverrides overrides;
+  final bool applyToAll;
+  final ValueChanged<bool> onApplyToAllChanged;
+  final ValueChanged<int> onColorChanged;
+  final ValueChanged<double> onSizeChanged;
+  final ValueChanged<ChartFontWeight> onFontWeightChanged;
+  final ValueChanged<ChartTextAlignment> onAlignmentChanged;
+  final ValueChanged<bool> onVisibilityChanged;
+  final ChartStyle style;
+  final ChartTypeStyles typeStyles;
+
+  bool get _isText => switch (selection.elementType) {
+    ChartElementType.title ||
+    ChartElementType.xAxisLabel ||
+    ChartElementType.yAxisLabel ||
+    ChartElementType.dataLabel ||
+    ChartElementType.legendItem => true,
+    _ => false,
+  };
+
+  bool get _isStructural => switch (selection.elementType) {
+    ChartElementType.xAxisLine ||
+    ChartElementType.yAxisLine ||
+    ChartElementType.gridLines => true,
+    _ => false,
+  };
+
+  ChartElementStyleOverride get _resolved => overrides.resolve(
+    chartType: selection.chartType,
+    elementType: selection.elementType,
+    index: applyToAll ? null : selection.index,
+  );
+
+  int get _defaultColor {
+    if (selection.elementType == ChartElementType.dataElement &&
+        selection.chartType == ChartType.pie) {
+      const pieColors = [
+        0xFF2563EB,
+        0xFF0F766E,
+        0xFF7C3AED,
+        0xFFDC5A3A,
+        0xFFD49A22,
+        0xFF64748B,
+      ];
+      return pieColors[(selection.index ?? 0) % pieColors.length];
+    }
+    if (selection.elementType == ChartElementType.dataElement) {
+      return style.primaryColor;
+    }
+    if (selection.elementType == ChartElementType.gridLines) return 0xFFE8E8E8;
+    if (selection.elementType == ChartElementType.xAxisLine ||
+        selection.elementType == ChartElementType.yAxisLine) {
+      return 0xFFD0D0D0;
+    }
+    return selection.elementType == ChartElementType.title
+        ? 0xFF171717
+        : selection.elementType == ChartElementType.dataLabel
+        ? (selection.chartType == ChartType.pie ? 0xFFFFFFFF : 0xFF555555)
+        : 0xFF777777;
+  }
+
+  double get _defaultSize => switch (selection.elementType) {
+    ChartElementType.title => style.titleSize,
+    ChartElementType.xAxisLabel ||
+    ChartElementType.yAxisLabel ||
+    ChartElementType.legendItem => 10,
+    ChartElementType.dataLabel =>
+      selection.chartType == ChartType.pie ? 11 : 10,
+    ChartElementType.dataElement => switch (selection.chartType) {
+      ChartType.bar => typeStyles.barWidth,
+      ChartType.line => 4,
+      ChartType.pie => 0,
+    },
+    ChartElementType.xAxisLine ||
+    ChartElementType.yAxisLine ||
+    ChartElementType.gridLines => 1,
+  };
+
+  ChartFontWeight get _defaultWeight =>
+      selection.elementType == ChartElementType.title
+      ? ChartFontWeight.semibold
+      : ChartFontWeight.normal;
 
   String get _elementLabel => switch (selection.elementType) {
     ChartElementType.title => 'Título do gráfico',
@@ -320,7 +476,12 @@ class _SelectionPanel extends StatelessWidget {
       ChartType.pie => 'Fatia selecionada',
     },
     ChartElementType.xAxisLabel => 'Label selecionado',
+    ChartElementType.yAxisLabel => 'Rótulo do eixo Y selecionado',
+    ChartElementType.dataLabel => 'Rótulo de dado selecionado',
     ChartElementType.legendItem => 'Item da legenda selecionado',
+    ChartElementType.xAxisLine => 'Linha do eixo X',
+    ChartElementType.yAxisLine => 'Linha do eixo Y',
+    ChartElementType.gridLines => 'Linhas de grade',
   };
 
   String _formatValue(double value) {
@@ -333,6 +494,10 @@ class _SelectionPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final effectiveColor = _resolved.color ?? _defaultColor;
+    final effectiveSize = _resolved.size ?? _defaultSize;
+    final effectiveWeight = _resolved.fontWeight ?? _defaultWeight;
+    final effectiveAlignment = _resolved.alignment ?? ChartTextAlignment.center;
     return Container(
       key: const ValueKey('selection-panel'),
       padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
@@ -341,32 +506,254 @@ class _SelectionPanel extends StatelessWidget {
         border: Border.all(color: const Color(0xFFD8D8D8)),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.touch_app_outlined, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _elementLabel,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+          Row(
+            children: [
+              const Icon(Icons.touch_app_outlined, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _elementLabel,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    if (selection.category != null)
+                      Text('Categoria: ${selection.category}'),
+                    if (selection.value != null)
+                      Text('Valor: ${_formatValue(selection.value!)}'),
+                    if (selection.text != null)
+                      Text('Rótulo: ${selection.text}'),
+                  ],
                 ),
-                if (selection.category != null)
-                  Text('Categoria: ${selection.category}'),
-                if (selection.value != null)
-                  Text('Valor: ${_formatValue(selection.value!)}'),
+              ),
+              TextButton(
+                key: const ValueKey('close-selection'),
+                onPressed: onClose,
+                child: const Text('Fechar seleção'),
+              ),
+            ],
+          ),
+          if (selection.elementType != ChartElementType.title &&
+              !_isStructural) ...[
+            const SizedBox(height: 12),
+            const Text('Aplicar em:'),
+            const SizedBox(height: 6),
+            SegmentedButton<bool>(
+              key: const ValueKey('selection-scope'),
+              segments: [
+                ButtonSegment(value: false, label: Text(_singleScopeLabel)),
+                ButtonSegment(value: true, label: Text(_allScopeLabel)),
+              ],
+              selected: {applyToAll},
+              onSelectionChanged: (values) => onApplyToAllChanged(values.first),
+            ),
+          ],
+          const SizedBox(height: 14),
+          if (!(selection.chartType == ChartType.pie &&
+              selection.elementType == ChartElementType.dataElement &&
+              applyToAll)) ...[
+            const Text('Cor'),
+            const SizedBox(height: 6),
+            _ContextColorPalette(
+              selectedColor: effectiveColor,
+              onSelected: onColorChanged,
+            ),
+            const SizedBox(height: 12),
+          ],
+          Text(_sizeLabel),
+          Slider(
+            key: const ValueKey('context-size-slider'),
+            min: _sizeRange.$1,
+            max: _sizeRange.$2,
+            divisions: _sizeRange.$3,
+            value: effectiveSize.clamp(_sizeRange.$1, _sizeRange.$2),
+            onChanged: onSizeChanged,
+          ),
+          if (_isStructural)
+            Row(
+              key: const ValueKey('context-visibility'),
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Mostrar'),
+                Switch(
+                  value: _resolved.visible ?? _defaultVisibility,
+                  onChanged: onVisibilityChanged,
+                ),
               ],
             ),
-          ),
-          TextButton(
-            key: const ValueKey('close-selection'),
-            onPressed: onClose,
-            child: const Text('Fechar seleção'),
-          ),
+          if (_isText) ...[
+            const Text('Peso'),
+            const SizedBox(height: 6),
+            SegmentedButton<ChartFontWeight>(
+              key: const ValueKey('context-font-weight'),
+              segments: const [
+                ButtonSegment(
+                  value: ChartFontWeight.normal,
+                  label: Text('Normal'),
+                ),
+                ButtonSegment(
+                  value: ChartFontWeight.semibold,
+                  label: Text('Semibold'),
+                ),
+                ButtonSegment(value: ChartFontWeight.bold, label: Text('Bold')),
+              ],
+              selected: {effectiveWeight},
+              onSelectionChanged: (values) => onFontWeightChanged(values.first),
+            ),
+          ],
+          if (selection.elementType == ChartElementType.title) ...[
+            const SizedBox(height: 12),
+            const Text('Alinhamento'),
+            const SizedBox(height: 6),
+            SegmentedButton<ChartTextAlignment>(
+              key: const ValueKey('context-alignment'),
+              segments: const [
+                ButtonSegment(
+                  value: ChartTextAlignment.left,
+                  icon: Icon(Icons.format_align_left_rounded),
+                ),
+                ButtonSegment(
+                  value: ChartTextAlignment.center,
+                  icon: Icon(Icons.format_align_center_rounded),
+                ),
+                ButtonSegment(
+                  value: ChartTextAlignment.right,
+                  icon: Icon(Icons.format_align_right_rounded),
+                ),
+              ],
+              selected: {effectiveAlignment},
+              onSelectionChanged: (values) => onAlignmentChanged(values.first),
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  String get _singleScopeLabel => switch (selection.elementType) {
+    ChartElementType.dataElement => switch (selection.chartType) {
+      ChartType.bar => 'Somente esta',
+      ChartType.line => 'Somente este',
+      ChartType.pie => 'Somente esta',
+    },
+    ChartElementType.xAxisLabel => 'Somente este',
+    ChartElementType.yAxisLabel => 'Somente este',
+    ChartElementType.dataLabel => 'Somente este',
+    ChartElementType.legendItem => 'Somente este',
+    ChartElementType.title => '',
+    ChartElementType.xAxisLine ||
+    ChartElementType.yAxisLine ||
+    ChartElementType.gridLines => '',
+  };
+
+  String get _allScopeLabel => switch (selection.elementType) {
+    ChartElementType.dataElement => switch (selection.chartType) {
+      ChartType.bar => 'Todas',
+      ChartType.line => 'Todos',
+      ChartType.pie => 'Todas',
+    },
+    ChartElementType.xAxisLabel ||
+    ChartElementType.yAxisLabel ||
+    ChartElementType.dataLabel ||
+    ChartElementType.legendItem => 'Todos',
+    ChartElementType.title => '',
+    ChartElementType.xAxisLine ||
+    ChartElementType.yAxisLine ||
+    ChartElementType.gridLines => '',
+  };
+
+  String get _sizeLabel => switch (selection.elementType) {
+    ChartElementType.title ||
+    ChartElementType.xAxisLabel ||
+    ChartElementType.yAxisLabel ||
+    ChartElementType.dataLabel ||
+    ChartElementType.legendItem => 'Tamanho',
+    ChartElementType.dataElement => switch (selection.chartType) {
+      ChartType.bar => 'Largura',
+      ChartType.line => 'Tamanho do marcador',
+      ChartType.pie => 'Destaque',
+    },
+    ChartElementType.xAxisLine || ChartElementType.yAxisLine => 'Espessura',
+    ChartElementType.gridLines => 'Espessura',
+  };
+
+  (double, double, int) get _sizeRange => switch (selection.elementType) {
+    ChartElementType.title => (14, 28, 14),
+    ChartElementType.xAxisLabel ||
+    ChartElementType.yAxisLabel ||
+    ChartElementType.dataLabel ||
+    ChartElementType.legendItem => (8, 18, 10),
+    ChartElementType.dataElement => switch (selection.chartType) {
+      ChartType.bar => (8, 36, 28),
+      ChartType.line => (2, 10, 8),
+      ChartType.pie => (0, 14, 14),
+    },
+    ChartElementType.xAxisLine ||
+    ChartElementType.yAxisLine ||
+    ChartElementType.gridLines => (1, 6, 10),
+  };
+
+  bool get _defaultVisibility => switch (selection.elementType) {
+    ChartElementType.xAxisLine => style.showXAxis,
+    ChartElementType.yAxisLine => style.showYAxis,
+    ChartElementType.gridLines => style.showGrid,
+    _ => true,
+  };
+}
+
+class _ContextColorPalette extends StatelessWidget {
+  const _ContextColorPalette({
+    required this.selectedColor,
+    required this.onSelected,
+  });
+
+  static const colors = [
+    0xFF171717,
+    0xFF2563EB,
+    0xFF0F766E,
+    0xFF7C3AED,
+    0xFFDC5A3A,
+    0xFFD49A22,
+  ];
+
+  final int selectedColor;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      children: [
+        for (var index = 0; index < colors.length; index++)
+          IconButton(
+            key: ValueKey('context-color-$index'),
+            onPressed: () => onSelected(colors[index]),
+            tooltip: 'Cor ${index + 1}',
+            icon: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: Color(colors[index]),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selectedColor == colors[index]
+                      ? Colors.white
+                      : Colors.transparent,
+                  width: 3,
+                ),
+                boxShadow: selectedColor == colors[index]
+                    ? const [
+                        BoxShadow(color: Color(0xFF171717), spreadRadius: 2),
+                      ]
+                    : null,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

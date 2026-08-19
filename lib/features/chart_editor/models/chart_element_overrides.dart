@@ -11,31 +11,40 @@ class ChartElementStyleOverride {
     this.size,
     this.fontWeight,
     this.alignment,
+    this.visible,
   });
 
   final int? color;
   final double? size;
   final ChartFontWeight? fontWeight;
   final ChartTextAlignment? alignment;
+  final bool? visible;
 
   bool get isEmpty =>
-      color == null && size == null && fontWeight == null && alignment == null;
+      color == null &&
+      size == null &&
+      fontWeight == null &&
+      alignment == null &&
+      visible == null;
 
   ChartElementStyleOverride copyWith({
     int? color,
     double? size,
     ChartFontWeight? fontWeight,
     ChartTextAlignment? alignment,
+    bool? visible,
     bool clearColor = false,
     bool clearSize = false,
     bool clearFontWeight = false,
     bool clearAlignment = false,
+    bool clearVisible = false,
   }) {
     return ChartElementStyleOverride(
       color: clearColor ? null : color ?? this.color,
       size: clearSize ? null : size ?? this.size,
       fontWeight: clearFontWeight ? null : fontWeight ?? this.fontWeight,
       alignment: clearAlignment ? null : alignment ?? this.alignment,
+      visible: clearVisible ? null : visible ?? this.visible,
     );
   }
 
@@ -46,6 +55,7 @@ class ChartElementStyleOverride {
       size: other.size ?? size,
       fontWeight: other.fontWeight ?? fontWeight,
       alignment: other.alignment ?? alignment,
+      visible: other.visible ?? visible,
     );
   }
 }
@@ -82,18 +92,19 @@ class ChartElementOverrides {
     required ChartElementType elementType,
     int? index,
   }) {
-    final global = values[
-        ChartElementStyleKey(chartType: chartType, elementType: elementType)] ??
+    final global =
+        values[ChartElementStyleKey(
+          chartType: chartType,
+          elementType: elementType,
+        )] ??
         const ChartElementStyleOverride();
     if (index == null) return global;
     return global.merge(
-      values[
-        ChartElementStyleKey(
-          chartType: chartType,
-          elementType: elementType,
-          index: index,
-        )
-      ],
+      values[ChartElementStyleKey(
+        chartType: chartType,
+        elementType: elementType,
+        index: index,
+      )],
     );
   }
 
@@ -106,6 +117,7 @@ class ChartElementOverrides {
     double? size,
     ChartFontWeight? fontWeight,
     ChartTextAlignment? alignment,
+    bool? visible,
   }) {
     final updated = Map<ChartElementStyleKey, ChartElementStyleOverride>.of(
       values,
@@ -121,6 +133,7 @@ class ChartElementOverrides {
           size: size,
           fontWeight: fontWeight,
           alignment: alignment,
+          visible: visible,
         );
 
     if (applyToAll) {
@@ -135,6 +148,7 @@ class ChartElementOverrides {
           clearSize: size != null,
           clearFontWeight: fontWeight != null,
           clearAlignment: alignment != null,
+          clearVisible: visible != null,
         );
         if (cleared.isEmpty) {
           updated.remove(key);

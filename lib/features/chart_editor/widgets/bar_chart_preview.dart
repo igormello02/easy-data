@@ -4,10 +4,12 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../models/chart_data.dart';
+import '../models/chart_element_overrides.dart';
 import '../models/chart_selection.dart';
 import '../models/chart_style.dart';
 import '../models/chart_type.dart';
 import '../models/chart_type_styles.dart';
+import 'chart_interaction_overlay.dart';
 
 class BarChartPreview extends StatelessWidget {
   const BarChartPreview({
@@ -19,6 +21,7 @@ class BarChartPreview extends StatelessWidget {
     required this.selection,
     required this.onSelectionChanged,
     required this.onClearSelection,
+    required this.overrides,
   });
 
   final ChartData data;
@@ -28,6 +31,7 @@ class BarChartPreview extends StatelessWidget {
   final ChartSelection? selection;
   final ValueChanged<ChartSelection> onSelectionChanged;
   final VoidCallback onClearSelection;
+  final ChartElementOverrides overrides;
 
   bool _isSelected(ChartElementType type, [int? index]) {
     return selection?.elementType == type &&
@@ -36,12 +40,31 @@ class BarChartPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final titleOverride = overrides.resolve(
+      chartType: ChartType.bar,
+      elementType: ChartElementType.title,
+    );
     final values = data.points.map((point) => point.value).toList();
     final maximum = values.reduce(math.max);
     final minimum = values.reduce(math.min);
     final axisMinimum = minimum < 0 ? minimum * 1.15 : 0.0;
     final axisMaximum = maximum > 0 ? maximum * 1.15 : 1.0;
     final interval = _axisInterval(axisMinimum, axisMaximum);
+    final xAxisStyle = overrides.resolve(
+      chartType: ChartType.bar,
+      elementType: ChartElementType.xAxisLine,
+    );
+    final yAxisStyle = overrides.resolve(
+      chartType: ChartType.bar,
+      elementType: ChartElementType.yAxisLine,
+    );
+    final gridStyle = overrides.resolve(
+      chartType: ChartType.bar,
+      elementType: ChartElementType.gridLines,
+    );
+    final showXAxis = xAxisStyle.visible ?? style.showXAxis;
+    final showYAxis = yAxisStyle.visible ?? style.showYAxis;
+    final showGrid = gridStyle.visible ?? style.showGrid;
 
     return GestureDetector(
       onTap: freeMode ? onClearSelection : null,
@@ -75,12 +98,16 @@ class BarChartPreview extends StatelessWidget {
                   child: Text(
                     style.title,
                     key: const ValueKey('chart-preview-title'),
-                    textAlign: TextAlign.center,
+                    textAlign: _textAlign(titleOverride.alignment),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: style.titleSize,
-                      fontWeight: FontWeight.w600,
+                      color: Color(titleOverride.color ?? 0xFF171717),
+                      fontSize: titleOverride.size ?? style.titleSize,
+                      fontWeight: _fontWeight(
+                        titleOverride.fontWeight,
+                        FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -107,186 +134,366 @@ class BarChartPreview extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     child: SizedBox(
                       width: chartWidth,
-                      child: BarChart(
-                        BarChartData(
-                          minY: axisMinimum,
-                          maxY: axisMaximum,
-                          alignment: BarChartAlignment.spaceAround,
-                          barTouchData: BarTouchData(
-                            enabled: freeMode,
-                            touchCallback: (event, response) {
-                              if (event is! FlTapUpEvent) return;
-                              final index =
-                                  response?.spot?.touchedBarGroupIndex;
-                              if (index == null ||
-                                  index < 0 ||
-                                  index >= data.points.length) {
-                                onClearSelection();
-                                return;
-                              }
-                              final point = data.points[index];
-                              onSelectionChanged(
-                                ChartSelection(
-                                  elementType: ChartElementType.dataElement,
-                                  chartType: ChartType.bar,
-                                  index: index,
-                                  category: point.category,
-                                  value: point.value,
-                                ),
-                              );
-                            },
-                            touchTooltipData: BarTouchTooltipData(
-                              getTooltipColor: (_) => Colors.transparent,
-                              tooltipPadding: EdgeInsets.zero,
-                              tooltipMargin: 4,
-                              getTooltipItem:
-                                  (group, groupIndex, rod, rodIndex) {
-                                    return BarTooltipItem(
-                                      _formatValue(rod.toY),
-                                      const TextStyle(
-                                        color: Color(0xFF555555),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: BarChart(
+                              BarChartData(
+                                minY: axisMinimum,
+                                maxY: axisMaximum,
+                                alignment: BarChartAlignment.spaceAround,
+                                barTouchData: BarTouchData(
+                                  enabled: freeMode,
+                                  touchCallback: (event, response) {
+                                    if (event is! FlTapUpEvent) return;
+                                    final index =
+                                        response?.spot?.touchedBarGroupIndex;
+                                    if (index == null ||
+                                        index < 0 ||
+                                        index >= data.points.length) {
+                                      onClearSelection();
+                                      return;
+                                    }
+                                    final point = data.points[index];
+                                    final selectsDataLabel =
+                                        style.showValues &&
+                                        selection?.elementType ==
+                                            ChartElementType.dataElement &&
+                                        selection?.index == index;
+                                    onSelectionChanged(
+                                      ChartSelection(
+                                        elementType: selectsDataLabel
+                                            ? ChartElementType.dataLabel
+                                            : ChartElementType.dataElement,
+                                        chartType: ChartType.bar,
+                                        index: index,
+                                        category: point.category,
+                                        value: point.value,
+                                        text: selectsDataLabel
+                                            ? _formatValue(point.value)
+                                            : null,
                                       ),
                                     );
                                   },
-                            ),
-                          ),
-                          borderData: FlBorderData(
-                            show: style.showXAxis || style.showYAxis,
-                            border: Border(
-                              left: style.showYAxis
-                                  ? const BorderSide(color: Color(0xFFD0D0D0))
-                                  : BorderSide.none,
-                              bottom: style.showXAxis
-                                  ? const BorderSide(color: Color(0xFFD0D0D0))
-                                  : BorderSide.none,
-                            ),
-                          ),
-                          gridData: FlGridData(
-                            show: style.showGrid,
-                            drawVerticalLine: false,
-                            horizontalInterval: interval,
-                            getDrawingHorizontalLine: (_) => const FlLine(
-                              color: Color(0xFFE8E8E8),
-                              strokeWidth: 1,
-                            ),
-                          ),
-                          titlesData: FlTitlesData(
-                            topTitles: const AxisTitles(
-                              sideTitles: SideTitles(showTitles: false),
-                            ),
-                            rightTitles: const AxisTitles(
-                              sideTitles: SideTitles(showTitles: false),
-                            ),
-                            leftTitles: AxisTitles(
-                              sideTitles: SideTitles(
-                                showTitles: style.showYAxis,
-                                reservedSize: 42,
-                                interval: interval,
-                                getTitlesWidget: (value, meta) =>
-                                    SideTitleWidget(
-                                      meta: meta,
-                                      space: 6,
-                                      child: Text(
-                                        _formatAxisValue(value),
-                                        style: const TextStyle(
-                                          color: Color(0xFF8A8A8A),
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    ),
-                              ),
-                            ),
-                            bottomTitles: AxisTitles(
-                              sideTitles: SideTitles(
-                                showTitles: style.showXAxis,
-                                reservedSize: 46,
-                                getTitlesWidget: (value, meta) {
-                                  final index = value.toInt();
-                                  if (index < 0 ||
-                                      index >= data.points.length) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return SideTitleWidget(
-                                    meta: meta,
-                                    space: 8,
-                                    child: GestureDetector(
-                                      key: ValueKey('select-x-label-$index'),
-                                      onTap: freeMode
-                                          ? () => onSelectionChanged(
-                                              ChartSelection(
-                                                elementType:
-                                                    ChartElementType.xAxisLabel,
+                                  touchTooltipData: BarTouchTooltipData(
+                                    getTooltipColor: (_) => Colors.transparent,
+                                    tooltipPadding: EdgeInsets.zero,
+                                    tooltipMargin: 4,
+                                    getTooltipItem:
+                                        (group, groupIndex, rod, rodIndex) {
+                                          final labelOverride = overrides
+                                              .resolve(
                                                 chartType: ChartType.bar,
-                                                index: index,
-                                                category:
-                                                    data.points[index].category,
-                                                value: data.points[index].value,
+                                                elementType:
+                                                    ChartElementType.dataLabel,
+                                                index: groupIndex,
+                                              );
+                                          return BarTooltipItem(
+                                            _formatValue(rod.toY),
+                                            TextStyle(
+                                              color: Color(
+                                                labelOverride.color ??
+                                                    0xFF555555,
                                               ),
-                                            )
-                                          : null,
-                                      child: Container(
-                                        width: categoryWidth - 8,
-                                        decoration: _selectionDecoration(
-                                          _isSelected(
-                                            ChartElementType.xAxisLabel,
-                                            index,
+                                              fontSize:
+                                                  labelOverride.size ?? 10,
+                                              fontWeight: _fontWeight(
+                                                labelOverride.fontWeight,
+                                                FontWeight.w600,
+                                              ),
+                                              backgroundColor:
+                                                  _isSelected(
+                                                    ChartElementType.dataLabel,
+                                                    groupIndex,
+                                                  )
+                                                  ? const Color(0xFFFFE9A8)
+                                                  : null,
+                                            ),
+                                          );
+                                        },
+                                  ),
+                                ),
+                                borderData: FlBorderData(
+                                  show: showXAxis || showYAxis,
+                                  border: Border(
+                                    left: showYAxis
+                                        ? BorderSide(
+                                            color: Color(
+                                              yAxisStyle.color ?? 0xFFD0D0D0,
+                                            ),
+                                            width:
+                                                (yAxisStyle.size ?? 1) +
+                                                (_isSelected(
+                                                      ChartElementType
+                                                          .yAxisLine,
+                                                    )
+                                                    ? 1
+                                                    : 0),
+                                          )
+                                        : BorderSide.none,
+                                    bottom: showXAxis
+                                        ? BorderSide(
+                                            color: Color(
+                                              xAxisStyle.color ?? 0xFFD0D0D0,
+                                            ),
+                                            width:
+                                                (xAxisStyle.size ?? 1) +
+                                                (_isSelected(
+                                                      ChartElementType
+                                                          .xAxisLine,
+                                                    )
+                                                    ? 1
+                                                    : 0),
+                                          )
+                                        : BorderSide.none,
+                                  ),
+                                ),
+                                gridData: FlGridData(
+                                  show: showGrid,
+                                  drawVerticalLine: false,
+                                  horizontalInterval: interval,
+                                  getDrawingHorizontalLine: (_) => FlLine(
+                                    color: Color(gridStyle.color ?? 0xFFE8E8E8),
+                                    strokeWidth:
+                                        (gridStyle.size ?? 1) +
+                                        (_isSelected(ChartElementType.gridLines)
+                                            ? 0.75
+                                            : 0),
+                                  ),
+                                ),
+                                titlesData: FlTitlesData(
+                                  topTitles: const AxisTitles(
+                                    sideTitles: SideTitles(showTitles: false),
+                                  ),
+                                  rightTitles: const AxisTitles(
+                                    sideTitles: SideTitles(showTitles: false),
+                                  ),
+                                  leftTitles: AxisTitles(
+                                    sideTitles: SideTitles(
+                                      showTitles: showYAxis,
+                                      reservedSize: 42,
+                                      interval: interval,
+                                      getTitlesWidget: (value, meta) {
+                                        final tickIndex = (value / interval)
+                                            .round();
+                                        final labelOverride = overrides.resolve(
+                                          chartType: ChartType.bar,
+                                          elementType:
+                                              ChartElementType.yAxisLabel,
+                                          index: tickIndex,
+                                        );
+                                        return SideTitleWidget(
+                                          meta: meta,
+                                          space: 6,
+                                          child: GestureDetector(
+                                            key: ValueKey(
+                                              'select-y-label-$tickIndex',
+                                            ),
+                                            onTap: freeMode
+                                                ? () => onSelectionChanged(
+                                                    ChartSelection(
+                                                      elementType:
+                                                          ChartElementType
+                                                              .yAxisLabel,
+                                                      chartType: ChartType.bar,
+                                                      index: tickIndex,
+                                                      value: value,
+                                                      text: _formatAxisValue(
+                                                        value,
+                                                      ),
+                                                    ),
+                                                  )
+                                                : null,
+                                            child: Container(
+                                              decoration: _selectionDecoration(
+                                                _isSelected(
+                                                  ChartElementType.yAxisLabel,
+                                                  tickIndex,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                _formatAxisValue(value),
+                                                style: TextStyle(
+                                                  color: Color(
+                                                    labelOverride.color ??
+                                                        0xFF8A8A8A,
+                                                  ),
+                                                  fontSize:
+                                                      labelOverride.size ?? 10,
+                                                  fontWeight: _fontWeight(
+                                                    labelOverride.fontWeight,
+                                                    FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                        child: Text(
-                                          data.points[index].category,
-                                          textAlign: TextAlign.center,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Color(0xFF777777),
-                                            fontSize: 10,
-                                            height: 1.15,
-                                          ),
-                                        ),
-                                      ),
+                                        );
+                                      },
                                     ),
-                                  );
-                                },
+                                  ),
+                                  bottomTitles: AxisTitles(
+                                    sideTitles: SideTitles(
+                                      showTitles: showXAxis,
+                                      reservedSize: 46,
+                                      getTitlesWidget: (value, meta) {
+                                        final index = value.toInt();
+                                        if (index < 0 ||
+                                            index >= data.points.length) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        final labelOverride = overrides.resolve(
+                                          chartType: ChartType.bar,
+                                          elementType:
+                                              ChartElementType.xAxisLabel,
+                                          index: index,
+                                        );
+                                        return SideTitleWidget(
+                                          meta: meta,
+                                          space: 8,
+                                          child: GestureDetector(
+                                            key: ValueKey(
+                                              'select-x-label-$index',
+                                            ),
+                                            onTap: freeMode
+                                                ? () => onSelectionChanged(
+                                                    ChartSelection(
+                                                      elementType:
+                                                          ChartElementType
+                                                              .xAxisLabel,
+                                                      chartType: ChartType.bar,
+                                                      index: index,
+                                                      category: data
+                                                          .points[index]
+                                                          .category,
+                                                      value: data
+                                                          .points[index]
+                                                          .value,
+                                                    ),
+                                                  )
+                                                : null,
+                                            child: Container(
+                                              width: categoryWidth - 8,
+                                              decoration: _selectionDecoration(
+                                                _isSelected(
+                                                  ChartElementType.xAxisLabel,
+                                                  index,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                data.points[index].category,
+                                                textAlign: TextAlign.center,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Color(
+                                                    labelOverride.color ??
+                                                        0xFF777777,
+                                                  ),
+                                                  fontSize:
+                                                      labelOverride.size ?? 10,
+                                                  fontWeight: _fontWeight(
+                                                    labelOverride.fontWeight,
+                                                    FontWeight.normal,
+                                                  ),
+                                                  height: 1.15,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                barGroups: [
+                                  for (
+                                    var index = 0;
+                                    index < data.points.length;
+                                    index++
+                                  )
+                                    BarChartGroupData(
+                                      x: index,
+                                      showingTooltipIndicators: const [],
+                                      barRods: [
+                                        BarChartRodData(
+                                          toY: data.points[index].value,
+                                          width:
+                                              overrides
+                                                  .resolve(
+                                                    chartType: ChartType.bar,
+                                                    elementType:
+                                                        ChartElementType
+                                                            .dataElement,
+                                                    index: index,
+                                                  )
+                                                  .size ??
+                                              barStyle.barWidth,
+                                          color: Color(
+                                            overrides
+                                                    .resolve(
+                                                      chartType: ChartType.bar,
+                                                      elementType:
+                                                          ChartElementType
+                                                              .dataElement,
+                                                      index: index,
+                                                    )
+                                                    .color ??
+                                                style.primaryColor,
+                                          ),
+                                          borderSide:
+                                              _isSelected(
+                                                ChartElementType.dataElement,
+                                                index,
+                                              )
+                                              ? const BorderSide(
+                                                  color: Color(0xFF111111),
+                                                  width: 3,
+                                                )
+                                              : BorderSide.none,
+                                          borderRadius:
+                                              const BorderRadius.vertical(
+                                                top: Radius.circular(5),
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                ],
                               ),
+                              duration: const Duration(milliseconds: 200),
                             ),
                           ),
-                          barGroups: [
+                          CartesianInteractionOverlay(
+                            chartType: ChartType.bar,
+                            freeMode: freeMode,
+                            plotLeft: showYAxis ? 42 : 0,
+                            plotBottom: showXAxis ? 46 : 0,
+                            gridLineFractions: _gridFractions(
+                              axisMinimum,
+                              axisMaximum,
+                              interval,
+                            ),
+                            showXAxis: showXAxis,
+                            showYAxis: showYAxis,
+                            showGrid: showGrid,
+                            onSelectionChanged: onSelectionChanged,
+                          ),
+                          if (style.showValues)
                             for (
                               var index = 0;
                               index < data.points.length;
                               index++
                             )
-                              BarChartGroupData(
-                                x: index,
-                                showingTooltipIndicators: style.showValues
-                                    ? const [0]
-                                    : const [],
-                                barRods: [
-                                  BarChartRodData(
-                                    toY: data.points[index].value,
-                                    width: barStyle.barWidth,
-                                    color: Color(style.primaryColor),
-                                    borderSide:
-                                        _isSelected(
-                                          ChartElementType.dataElement,
-                                          index,
-                                        )
-                                        ? const BorderSide(
-                                            color: Color(0xFF111111),
-                                            width: 3,
-                                          )
-                                        : BorderSide.none,
-                                    borderRadius: const BorderRadius.vertical(
-                                      top: Radius.circular(5),
-                                    ),
-                                  ),
-                                ],
+                              _buildDataLabel(
+                                constraints: constraints,
+                                chartWidth: chartWidth,
+                                showXAxis: showXAxis,
+                                showYAxis: showYAxis,
+                                axisMinimum: axisMinimum,
+                                axisMaximum: axisMaximum,
+                                index: index,
                               ),
-                          ],
-                        ),
-                        duration: const Duration(milliseconds: 200),
+                        ],
                       ),
                     ),
                   );
@@ -306,6 +513,77 @@ class BarChartPreview extends StatelessWidget {
       borderRadius: BorderRadius.circular(4),
     );
   }
+
+  Widget _buildDataLabel({
+    required BoxConstraints constraints,
+    required double chartWidth,
+    required bool showXAxis,
+    required bool showYAxis,
+    required double axisMinimum,
+    required double axisMaximum,
+    required int index,
+  }) {
+    final point = data.points[index];
+    final plotLeft = showYAxis ? 42.0 : 0.0;
+    final plotBottom = showXAxis ? 46.0 : 0.0;
+    final plotWidth = chartWidth - plotLeft;
+    final plotHeight = constraints.maxHeight - plotBottom;
+    final x = plotLeft + plotWidth * (index + 0.5) / data.points.length;
+    final fraction = (axisMaximum - point.value) / (axisMaximum - axisMinimum);
+    final y = (plotHeight * fraction).clamp(0.0, plotHeight - 4);
+    final labelOverride = overrides.resolve(
+      chartType: ChartType.bar,
+      elementType: ChartElementType.dataLabel,
+      index: index,
+    );
+    return Positioned(
+      key: ValueKey('data-label-position-$index'),
+      left: x - 30,
+      top: (y - 28).clamp(0.0, plotHeight - 28),
+      width: 60,
+      height: 28,
+      child: ChartDataLabel(
+        key: ValueKey('select-data-label-$index'),
+        text: _formatValue(point.value),
+        style: labelOverride,
+        selected: _isSelected(ChartElementType.dataLabel, index),
+        onTap: freeMode
+            ? () => onSelectionChanged(
+                ChartSelection(
+                  elementType: ChartElementType.dataLabel,
+                  chartType: ChartType.bar,
+                  index: index,
+                  category: point.category,
+                  value: point.value,
+                  text: _formatValue(point.value),
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
+  List<double> _gridFractions(double minimum, double maximum, double interval) {
+    final fractions = <double>[];
+    for (var value = minimum; value <= maximum; value += interval) {
+      fractions.add((maximum - value) / (maximum - minimum));
+    }
+    return fractions;
+  }
+
+  FontWeight _fontWeight(ChartFontWeight? weight, FontWeight fallback) =>
+      switch (weight) {
+        ChartFontWeight.normal => FontWeight.w400,
+        ChartFontWeight.semibold => FontWeight.w600,
+        ChartFontWeight.bold => FontWeight.w700,
+        null => fallback,
+      };
+
+  TextAlign _textAlign(ChartTextAlignment? alignment) => switch (alignment) {
+    ChartTextAlignment.left => TextAlign.left,
+    ChartTextAlignment.center || null => TextAlign.center,
+    ChartTextAlignment.right => TextAlign.right,
+  };
 
   double _categorySlotWidth(String category) {
     if (category.length <= 10) return 72;

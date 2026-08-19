@@ -1,6 +1,16 @@
 import 'chart_type.dart';
 
-enum ChartElementType { title, dataElement, xAxisLabel, legendItem }
+enum ChartElementType {
+  title,
+  dataElement,
+  xAxisLabel,
+  yAxisLabel,
+  dataLabel,
+  legendItem,
+  xAxisLine,
+  yAxisLine,
+  gridLines,
+}
 
 class ChartSelection {
   const ChartSelection({
@@ -9,6 +19,7 @@ class ChartSelection {
     this.index,
     this.category,
     this.value,
+    this.text,
   });
 
   final ChartElementType elementType;
@@ -16,4 +27,5 @@ class ChartSelection {
   final int? index;
   final String? category;
   final double? value;
+  final String? text;
 }
