@@ -2,7 +2,13 @@ import 'dart:typed_data';
 
 import 'package:easy_data/features/chart_editor/chart_editor_page.dart';
 import 'package:easy_data/features/chart_editor/models/chart_data.dart';
+import 'package:easy_data/features/chart_editor/models/chart_sort_order.dart';
+import 'package:easy_data/features/chart_editor/models/chart_selection.dart';
+import 'package:easy_data/features/chart_editor/models/chart_type.dart';
 import 'package:easy_data/features/chart_editor/models/chart_type_styles.dart';
+import 'package:easy_data/features/chart_editor/widgets/bar_chart_preview.dart';
+import 'package:easy_data/features/chart_editor/widgets/line_chart_preview.dart';
+import 'package:easy_data/features/chart_editor/widgets/pie_chart_preview.dart';
 import 'package:easy_data/features/export/chart_export_service.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -53,6 +59,26 @@ void main() {
     final option = find.byKey(ValueKey(key));
     await tester.ensureVisible(option);
     await tester.tap(option);
+    await tester.pump();
+  }
+
+  Future<void> selectSortOrder(
+    WidgetTester tester,
+    ChartSortOrder order,
+  ) async {
+    final dropdown = find.byKey(const ValueKey('category-sort-order'));
+    await tester.ensureVisible(dropdown);
+    await tester.tap(dropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(order.label).last);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> setFreeMode(WidgetTester tester, bool enabled) async {
+    final switchTile = find.byKey(const ValueKey('free-mode-switch'));
+    await tester.ensureVisible(switchTile);
+    final tile = tester.widget<SwitchListTile>(switchTile);
+    tile.onChanged!(enabled);
     await tester.pump();
   }
 
@@ -178,6 +204,239 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('advanced-options')), findsNothing);
+  });
+
+  testWidgets('activates and deactivates free mode', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    var tile = tester.widget<SwitchListTile>(
+      find.byKey(const ValueKey('free-mode-switch')),
+    );
+    expect(tile.value, isFalse);
+
+    await setFreeMode(tester, true);
+    tile = tester.widget<SwitchListTile>(
+      find.byKey(const ValueKey('free-mode-switch')),
+    );
+    expect(tile.value, isTrue);
+    expect(
+      find.text('Toque em um elemento do gráfico para editá-lo.'),
+      findsOneWidget,
+    );
+
+    tester
+        .widget<BarChartPreview>(find.byType(BarChartPreview))
+        .onSelectionChanged(
+          const ChartSelection(
+            elementType: ChartElementType.dataElement,
+            chartType: ChartType.bar,
+            index: 0,
+            category: 'Janeiro',
+            value: 4200,
+          ),
+        );
+    await tester.pump();
+    expect(find.byKey(const ValueKey('selection-panel')), findsOneWidget);
+
+    await setFreeMode(tester, false);
+    expect(find.byKey(const ValueKey('selection-panel')), findsNothing);
+  });
+
+  testWidgets('normal mode does not accept a selection', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    tester
+        .widget<BarChartPreview>(find.byType(BarChartPreview))
+        .onSelectionChanged(
+          const ChartSelection(
+            elementType: ChartElementType.dataElement,
+            chartType: ChartType.bar,
+            index: 0,
+            category: 'Janeiro',
+            value: 4200,
+          ),
+        );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('selection-panel')), findsNothing);
+  });
+
+  testWidgets('selects a bar, changes selection and clears it', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    var preview = tester.widget<BarChartPreview>(find.byType(BarChartPreview));
+
+    preview.onSelectionChanged(
+      const ChartSelection(
+        elementType: ChartElementType.dataElement,
+        chartType: ChartType.bar,
+        index: 0,
+        category: 'Janeiro',
+        value: 4200,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Barra selecionada'), findsOneWidget);
+    expect(find.text('Categoria: Janeiro'), findsOneWidget);
+    expect(find.text('Valor: 4200'), findsOneWidget);
+
+    preview = tester.widget<BarChartPreview>(find.byType(BarChartPreview));
+    preview.onSelectionChanged(
+      const ChartSelection(
+        elementType: ChartElementType.xAxisLabel,
+        chartType: ChartType.bar,
+        index: 1,
+        category: 'Fevereiro',
+        value: 5800,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Label selecionado'), findsOneWidget);
+    expect(find.text('Categoria: Fevereiro'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('close-selection')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('selection-panel')), findsNothing);
+  });
+
+  testWidgets('selects a line point and a pie slice', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+    await selectType(tester, 'lines');
+    tester
+        .widget<LineChartPreview>(find.byType(LineChartPreview))
+        .onSelectionChanged(
+          const ChartSelection(
+            elementType: ChartElementType.dataElement,
+            chartType: ChartType.line,
+            index: 1,
+            category: 'Fevereiro',
+            value: 5800,
+          ),
+        );
+    await tester.pump();
+    expect(find.text('Ponto selecionado'), findsOneWidget);
+    expect(find.text('Categoria: Fevereiro'), findsOneWidget);
+
+    await selectType(tester, 'pie');
+    expect(find.byKey(const ValueKey('selection-panel')), findsNothing);
+    tester
+        .widget<PieChartPreview>(find.byType(PieChartPreview))
+        .onSelectionChanged(
+          const ChartSelection(
+            elementType: ChartElementType.dataElement,
+            chartType: ChartType.pie,
+            index: 2,
+            category: 'Março',
+            value: 5100,
+          ),
+        );
+    await tester.pump();
+    expect(find.text('Fatia selecionada'), findsOneWidget);
+    expect(find.text('Categoria: Março'), findsOneWidget);
+  });
+
+  testWidgets('selects title by touch and preserves source data', (
+    tester,
+  ) async {
+    final original = data.points.toList();
+    await tester.pumpWidget(buildEditor());
+    await setFreeMode(tester, true);
+
+    final title = find.byKey(const ValueKey('select-chart-title'));
+    await tester.ensureVisible(title);
+    await tester.tap(title);
+    await tester.pump();
+
+    expect(find.text('Título do gráfico'), findsOneWidget);
+    expect(data.points, orderedEquals(original));
+  });
+
+  testWidgets('sorts categories without losing their values', (tester) async {
+    const sortableData = ChartData(
+      points: [
+        ChartDataPoint(category: 'C', value: 30),
+        ChartDataPoint(category: 'A', value: 10),
+        ChartDataPoint(category: 'B', value: 20),
+      ],
+    );
+    await tester.pumpWidget(
+      const MaterialApp(home: ChartEditorPage(data: sortableData)),
+    );
+    await expandOptions(tester);
+
+    var preview = tester.widget<BarChartPreview>(find.byType(BarChartPreview));
+    expect(preview.data.points.map((point) => point.category), ['C', 'A', 'B']);
+
+    await selectSortOrder(tester, ChartSortOrder.alphabeticalAsc);
+    preview = tester.widget<BarChartPreview>(find.byType(BarChartPreview));
+    expect(preview.data.points.map((point) => point.category), ['A', 'B', 'C']);
+    expect(preview.data.points.map((point) => point.value), [10, 20, 30]);
+
+    await selectSortOrder(tester, ChartSortOrder.valueDesc);
+    preview = tester.widget<BarChartPreview>(find.byType(BarChartPreview));
+    expect(preview.data.points.map((point) => point.category), ['C', 'B', 'A']);
+    expect(preview.data.points.map((point) => point.value), [30, 20, 10]);
+    expect(sortableData.points.map((point) => point.category), ['C', 'A', 'B']);
+  });
+
+  testWidgets('preserves sorting while switching among chart types', (
+    tester,
+  ) async {
+    const sortableData = ChartData(
+      points: [
+        ChartDataPoint(category: 'C', value: 30),
+        ChartDataPoint(category: 'A', value: 10),
+        ChartDataPoint(category: 'B', value: 20),
+      ],
+    );
+    await tester.pumpWidget(
+      const MaterialApp(home: ChartEditorPage(data: sortableData)),
+    );
+    await expandOptions(tester);
+    await selectSortOrder(tester, ChartSortOrder.valueAsc);
+
+    await selectType(tester, 'lines');
+    final line = tester.widget<LineChartPreview>(find.byType(LineChartPreview));
+    expect(line.data.points.map((point) => point.category), ['A', 'B', 'C']);
+
+    await selectType(tester, 'pie');
+    final pie = tester.widget<PieChartPreview>(find.byType(PieChartPreview));
+    expect(pie.data.points.map((point) => point.category), ['A', 'B', 'C']);
+    expect(pie.data.points.map((point) => point.value), [10, 20, 30]);
+  });
+
+  testWidgets('returning to Dados leaves the original order intact', (
+    tester,
+  ) async {
+    const source = ChartData(
+      points: [
+        ChartDataPoint(category: 'C', value: 30),
+        ChartDataPoint(category: 'A', value: 10),
+        ChartDataPoint(category: 'B', value: 20),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => FilledButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ChartEditorPage(data: source),
+              ),
+            ),
+            child: const Text('Abrir'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Abrir'));
+    await tester.pumpAndSettle();
+    await expandOptions(tester);
+    await selectSortOrder(tester, ChartSortOrder.alphabeticalAsc);
+
+    await tester.tap(find.byKey(const ValueKey('back-to-data')));
+    await tester.pumpAndSettle();
+
+    expect(source.points.map((point) => point.category), ['C', 'A', 'B']);
   });
 
   testWidgets('shows and hides the title', (tester) async {

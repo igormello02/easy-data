@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../export/chart_export_service.dart';
 import 'models/chart_data.dart';
+import 'models/chart_selection.dart';
+import 'models/chart_sort_order.dart';
 import 'models/chart_style.dart';
 import 'models/chart_type.dart';
 import 'models/chart_type_styles.dart';
@@ -23,6 +25,10 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
   ChartStyle _style = const ChartStyle();
   ChartTypeStyles _typeStyles = const ChartTypeStyles();
   ChartType _selectedType = ChartType.bar;
+  ChartSortOrder _sortOrder = ChartSortOrder.original;
+  ChartSelection? _selection;
+  bool _isFreeMode = false;
+  bool _hasShownFreeModeHint = false;
   bool _showAdvancedOptions = false;
   final GlobalKey _exportBoundaryKey = GlobalKey();
   late final ChartExportService _exportService;
@@ -68,23 +74,62 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
   }
 
   Widget _buildPreview() {
+    final sortedData = _sortOrder.applyTo(widget.data);
+    final selection = _isExporting ? null : _selection;
+    final freeMode = _isFreeMode && !_isExporting;
     return switch (_selectedType) {
       ChartType.bar => BarChartPreview(
-        data: widget.data,
+        data: sortedData,
         style: _style,
         barStyle: _typeStyles,
+        freeMode: freeMode,
+        selection: selection,
+        onSelectionChanged: _selectElement,
+        onClearSelection: _clearSelection,
       ),
       ChartType.line => LineChartPreview(
-        data: widget.data,
+        data: sortedData,
         style: _style,
         lineStyle: _typeStyles,
+        freeMode: freeMode,
+        selection: selection,
+        onSelectionChanged: _selectElement,
+        onClearSelection: _clearSelection,
       ),
       ChartType.pie => PieChartPreview(
-        data: widget.data,
+        data: sortedData,
         style: _style,
         pieStyle: _typeStyles,
+        freeMode: freeMode,
+        selection: selection,
+        onSelectionChanged: _selectElement,
+        onClearSelection: _clearSelection,
       ),
     };
+  }
+
+  void _selectElement(ChartSelection selection) {
+    if (!_isFreeMode) return;
+    setState(() => _selection = selection);
+  }
+
+  void _clearSelection() {
+    if (_selection != null) setState(() => _selection = null);
+  }
+
+  void _setFreeMode(bool enabled) {
+    setState(() {
+      _isFreeMode = enabled;
+      if (!enabled) _selection = null;
+    });
+    if (enabled && !_hasShownFreeModeHint) {
+      _hasShownFreeModeHint = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Toque em um elemento do gráfico para editá-lo.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -147,10 +192,32 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
                   child: SizedBox(height: 300, child: _buildPreview()),
                 ),
               ),
+              if (_selection != null) ...[
+                const SizedBox(height: 12),
+                _SelectionPanel(
+                  selection: _selection!,
+                  onClose: _clearSelection,
+                ),
+              ],
               const SizedBox(height: 24),
               _ChartTypeSelector(
                 selectedType: _selectedType,
-                onSelected: (type) => setState(() => _selectedType = type),
+                onSelected: (type) => setState(() {
+                  _selectedType = type;
+                  _selection = null;
+                }),
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                key: const ValueKey('free-mode-switch'),
+                title: const Text(
+                  'Modo livre',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text('Toque nos elementos para selecioná-los'),
+                value: _isFreeMode,
+                onChanged: _setFreeMode,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
               ),
               const SizedBox(height: 24),
               Text(
@@ -225,12 +292,80 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
                   style: _style,
                   typeStyles: _typeStyles,
                   chartType: _selectedType,
+                  sortOrder: _sortOrder,
                   onStyleChanged: _updateStyle,
                   onTypeStylesChanged: _updateTypeStyles,
+                  onSortOrderChanged: (order) =>
+                      setState(() => _sortOrder = order),
                 ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SelectionPanel extends StatelessWidget {
+  const _SelectionPanel({required this.selection, required this.onClose});
+
+  final ChartSelection selection;
+  final VoidCallback onClose;
+
+  String get _elementLabel => switch (selection.elementType) {
+    ChartElementType.title => 'Título do gráfico',
+    ChartElementType.dataElement => switch (selection.chartType) {
+      ChartType.bar => 'Barra selecionada',
+      ChartType.line => 'Ponto selecionado',
+      ChartType.pie => 'Fatia selecionada',
+    },
+    ChartElementType.xAxisLabel => 'Label selecionado',
+    ChartElementType.legendItem => 'Item da legenda selecionado',
+  };
+
+  String _formatValue(double value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('selection-panel'),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        border: Border.all(color: const Color(0xFFD8D8D8)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.touch_app_outlined, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _elementLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (selection.category != null)
+                  Text('Categoria: ${selection.category}'),
+                if (selection.value != null)
+                  Text('Valor: ${_formatValue(selection.value!)}'),
+              ],
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('close-selection'),
+            onPressed: onClose,
+            child: const Text('Fechar seleção'),
+          ),
+        ],
       ),
     );
   }
@@ -304,15 +439,19 @@ class _AdvancedOptions extends StatelessWidget {
     required this.style,
     required this.typeStyles,
     required this.chartType,
+    required this.sortOrder,
     required this.onStyleChanged,
     required this.onTypeStylesChanged,
+    required this.onSortOrderChanged,
   });
 
   final ChartStyle style;
   final ChartTypeStyles typeStyles;
   final ChartType chartType;
+  final ChartSortOrder sortOrder;
   final ValueChanged<ChartStyle> onStyleChanged;
   final ValueChanged<ChartTypeStyles> onTypeStylesChanged;
+  final ValueChanged<ChartSortOrder> onSortOrderChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -361,6 +500,28 @@ class _AdvancedOptions extends StatelessWidget {
                         onStyleChanged(style.copyWith(titleSize: value)),
                   ),
                 ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+              child: DropdownButtonFormField<ChartSortOrder>(
+                key: const ValueKey('category-sort-order'),
+                initialValue: sortOrder,
+                decoration: const InputDecoration(
+                  labelText: 'Ordenar categorias',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                ),
+                items: [
+                  for (final order in ChartSortOrder.values)
+                    DropdownMenuItem(value: order, child: Text(order.label)),
+                ],
+                onChanged: (order) {
+                  if (order != null) onSortOrderChanged(order);
+                },
               ),
             ),
             if (chartType == ChartType.bar)
