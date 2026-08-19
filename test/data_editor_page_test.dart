@@ -1,4 +1,5 @@
 import 'package:easy_data/features/data_editor/data_editor_page.dart';
+import 'package:easy_data/features/chart_editor/chart_editor_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -41,9 +42,6 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('cell-0-0')), 'São Paulo');
     await tester.enterText(find.byKey(const ValueKey('cell-0-1')), '42');
     await tester.enterText(find.byKey(const ValueKey('cell-0-2')), 'Produção');
-
-    await tester.tap(find.byKey(const ValueKey('generate-chart')));
-    await tester.pumpAndSettle();
 
     expect(find.text('Preço médio'), findsOneWidget);
     expect(find.text('Variação (%)'), findsOneWidget);
@@ -156,9 +154,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Gráfico'), findsOneWidget);
-    expect(find.text('Dados recebidos'), findsOneWidget);
-    expect(find.text('1 linha(s) • 2 coluna(s)'), findsOneWidget);
+    final editor = tester.widget<ChartEditorPage>(find.byType(ChartEditorPage));
+    expect(editor.data.points, hasLength(1));
+    expect(editor.data.points.single.category, 'Janeiro');
+    expect(editor.data.points.single.value, 4200);
     expect(find.text('Janeiro'), findsOneWidget);
-    expect(find.text('4200'), findsOneWidget);
   });
 }

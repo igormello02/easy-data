@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../chart_editor/chart_editor_page.dart';
+import '../chart_editor/models/chart_data.dart';
 import 'models/data_table_model.dart';
 
 class DataEditorPage extends StatefulWidget {
@@ -47,7 +48,17 @@ class _DataEditorPageState extends State<DataEditorPage> {
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChartEditorPage(data: _table.snapshot()),
+        builder: (_) => ChartEditorPage(
+          data: ChartData(
+            points: [
+              for (final row in _table.rows)
+                ChartDataPoint(
+                  category: row.values[_table.columns[0].id]!.trim(),
+                  value: _parseNumber(row.values[_table.columns[1].id]!.trim()),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -78,13 +89,21 @@ class _DataEditorPageState extends State<DataEditorPage> {
   }
 
   bool _isNumeric(String value) {
+    return double.tryParse(_normalizedNumber(value)) != null;
+  }
+
+  double _parseNumber(String value) {
+    return double.parse(_normalizedNumber(value));
+  }
+
+  String _normalizedNumber(String value) {
     var normalized = value.replaceAll(' ', '');
     if (normalized.contains(',') && normalized.contains('.')) {
       normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
     } else {
       normalized = normalized.replaceAll(',', '.');
     }
-    return double.tryParse(normalized) != null;
+    return normalized;
   }
 
   void _showMessage(String message) {
