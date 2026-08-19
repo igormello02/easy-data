@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'models/chart_data.dart';
 import 'models/chart_style.dart';
+import 'models/chart_type.dart';
+import 'models/chart_type_styles.dart';
 import 'widgets/bar_chart_preview.dart';
+import 'widgets/line_chart_preview.dart';
+import 'widgets/pie_chart_preview.dart';
 
 class ChartEditorPage extends StatefulWidget {
   const ChartEditorPage({super.key, required this.data});
@@ -15,10 +19,36 @@ class ChartEditorPage extends StatefulWidget {
 
 class _ChartEditorPageState extends State<ChartEditorPage> {
   ChartStyle _style = const ChartStyle();
+  ChartTypeStyles _typeStyles = const ChartTypeStyles();
+  ChartType _selectedType = ChartType.bar;
   bool _showAdvancedOptions = false;
 
   void _updateStyle(ChartStyle style) {
     setState(() => _style = style);
+  }
+
+  void _updateTypeStyles(ChartTypeStyles styles) {
+    setState(() => _typeStyles = styles);
+  }
+
+  Widget _buildPreview() {
+    return switch (_selectedType) {
+      ChartType.bar => BarChartPreview(
+        data: widget.data,
+        style: _style,
+        barStyle: _typeStyles,
+      ),
+      ChartType.line => LineChartPreview(
+        data: widget.data,
+        style: _style,
+        lineStyle: _typeStyles,
+      ),
+      ChartType.pie => PieChartPreview(
+        data: widget.data,
+        style: _style,
+        pieStyle: _typeStyles,
+      ),
+    };
   }
 
   @override
@@ -68,12 +98,12 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                height: 300,
-                child: BarChartPreview(data: widget.data, style: _style),
-              ),
+              SizedBox(height: 300, child: _buildPreview()),
               const SizedBox(height: 24),
-              const _ChartTypeSelector(),
+              _ChartTypeSelector(
+                selectedType: _selectedType,
+                onSelected: (type) => setState(() => _selectedType = type),
+              ),
               const SizedBox(height: 24),
               Text(
                 'TÍTULO',
@@ -107,20 +137,22 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              Text(
-                'COR PRINCIPAL',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: const Color(0xFF999999),
-                  fontWeight: FontWeight.w700,
+              if (_selectedType != ChartType.pie) ...[
+                const SizedBox(height: 24),
+                Text(
+                  'COR PRINCIPAL',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: const Color(0xFF999999),
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              _ColorPalette(
-                selectedColor: _style.primaryColor,
-                onSelected: (color) =>
-                    _updateStyle(_style.copyWith(primaryColor: color)),
-              ),
+                const SizedBox(height: 10),
+                _ColorPalette(
+                  selectedColor: _style.primaryColor,
+                  onSelected: (color) =>
+                      _updateStyle(_style.copyWith(primaryColor: color)),
+                ),
+              ],
               const SizedBox(height: 18),
               TextButton.icon(
                 key: const ValueKey('more-options'),
@@ -141,7 +173,13 @@ class _ChartEditorPageState extends State<ChartEditorPage> {
                 label: const Text('Mais opções'),
               ),
               if (_showAdvancedOptions)
-                _AdvancedOptions(style: _style, onChanged: _updateStyle),
+                _AdvancedOptions(
+                  style: _style,
+                  typeStyles: _typeStyles,
+                  chartType: _selectedType,
+                  onStyleChanged: _updateStyle,
+                  onTypeStylesChanged: _updateTypeStyles,
+                ),
             ],
           ),
         ),
@@ -214,10 +252,19 @@ class _ColorPalette extends StatelessWidget {
 }
 
 class _AdvancedOptions extends StatelessWidget {
-  const _AdvancedOptions({required this.style, required this.onChanged});
+  const _AdvancedOptions({
+    required this.style,
+    required this.typeStyles,
+    required this.chartType,
+    required this.onStyleChanged,
+    required this.onTypeStylesChanged,
+  });
 
   final ChartStyle style;
-  final ValueChanged<ChartStyle> onChanged;
+  final ChartTypeStyles typeStyles;
+  final ChartType chartType;
+  final ValueChanged<ChartStyle> onStyleChanged;
+  final ValueChanged<ChartTypeStyles> onTypeStylesChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -237,7 +284,8 @@ class _AdvancedOptions extends StatelessWidget {
               key: const ValueKey('show-title'),
               label: 'Mostrar título',
               value: style.showTitle,
-              onChanged: (value) => onChanged(style.copyWith(showTitle: value)),
+              onChanged: (value) =>
+                  onStyleChanged(style.copyWith(showTitle: value)),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
@@ -262,56 +310,118 @@ class _AdvancedOptions extends StatelessWidget {
                     divisions: 14,
                     value: style.titleSize,
                     onChanged: (value) =>
-                        onChanged(style.copyWith(titleSize: value)),
+                        onStyleChanged(style.copyWith(titleSize: value)),
                   ),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('Largura das barras'),
-                  Slider(
-                    key: const ValueKey('bar-width-slider'),
-                    min: 8,
-                    max: 36,
-                    divisions: 28,
-                    value: style.barWidth,
-                    onChanged: (value) =>
-                        onChanged(style.copyWith(barWidth: value)),
-                  ),
-                ],
+            if (chartType == ChartType.bar)
+              _SpecificSlider(
+                label: 'Largura das barras',
+                sliderKey: const ValueKey('bar-width-slider'),
+                min: 8,
+                max: 36,
+                divisions: 28,
+                value: typeStyles.barWidth,
+                onChanged: (value) =>
+                    onTypeStylesChanged(typeStyles.copyWith(barWidth: value)),
               ),
-            ),
+            if (chartType == ChartType.line)
+              _SpecificSlider(
+                label: 'Espessura da linha',
+                sliderKey: const ValueKey('line-width-slider'),
+                min: 1,
+                max: 8,
+                divisions: 7,
+                value: typeStyles.lineWidth,
+                onChanged: (value) =>
+                    onTypeStylesChanged(typeStyles.copyWith(lineWidth: value)),
+              ),
+            if (chartType == ChartType.pie)
+              _SpecificSlider(
+                label: 'Tamanho do furo central',
+                sliderKey: const ValueKey('pie-hole-slider'),
+                min: 0,
+                max: 70,
+                divisions: 14,
+                value: typeStyles.pieHolePercent,
+                onChanged: (value) => onTypeStylesChanged(
+                  typeStyles.copyWith(pieHolePercent: value),
+                ),
+              ),
             _OptionSwitch(
               key: const ValueKey('show-values'),
               label: 'Mostrar valores',
               value: style.showValues,
               onChanged: (value) =>
-                  onChanged(style.copyWith(showValues: value)),
+                  onStyleChanged(style.copyWith(showValues: value)),
             ),
-            _OptionSwitch(
-              key: const ValueKey('show-grid'),
-              label: 'Mostrar grade',
-              value: style.showGrid,
-              onChanged: (value) => onChanged(style.copyWith(showGrid: value)),
-            ),
-            _OptionSwitch(
-              key: const ValueKey('show-x-axis'),
-              label: 'Mostrar eixo X',
-              value: style.showXAxis,
-              onChanged: (value) => onChanged(style.copyWith(showXAxis: value)),
-            ),
-            _OptionSwitch(
-              key: const ValueKey('show-y-axis'),
-              label: 'Mostrar eixo Y',
-              value: style.showYAxis,
-              onChanged: (value) => onChanged(style.copyWith(showYAxis: value)),
-            ),
+            if (chartType != ChartType.pie) ...[
+              _OptionSwitch(
+                key: const ValueKey('show-grid'),
+                label: 'Mostrar grade',
+                value: style.showGrid,
+                onChanged: (value) =>
+                    onStyleChanged(style.copyWith(showGrid: value)),
+              ),
+              _OptionSwitch(
+                key: const ValueKey('show-x-axis'),
+                label: 'Mostrar eixo X',
+                value: style.showXAxis,
+                onChanged: (value) =>
+                    onStyleChanged(style.copyWith(showXAxis: value)),
+              ),
+              _OptionSwitch(
+                key: const ValueKey('show-y-axis'),
+                label: 'Mostrar eixo Y',
+                value: style.showYAxis,
+                onChanged: (value) =>
+                    onStyleChanged(style.copyWith(showYAxis: value)),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SpecificSlider extends StatelessWidget {
+  const _SpecificSlider({
+    required this.label,
+    required this.sliderKey,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final Key sliderKey;
+  final double min;
+  final double max;
+  final int divisions;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(label),
+          Slider(
+            key: sliderKey,
+            min: min,
+            max: max,
+            divisions: divisions,
+            value: value,
+            onChanged: onChanged,
+          ),
+        ],
       ),
     );
   }
@@ -342,7 +452,13 @@ class _OptionSwitch extends StatelessWidget {
 }
 
 class _ChartTypeSelector extends StatelessWidget {
-  const _ChartTypeSelector();
+  const _ChartTypeSelector({
+    required this.selectedType,
+    required this.onSelected,
+  });
+
+  final ChartType selectedType;
+  final ValueChanged<ChartType> onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -364,24 +480,28 @@ class _ChartTypeSelector extends StatelessWidget {
                 key: const ValueKey('chart-type-bars'),
                 icon: Icons.bar_chart_rounded,
                 label: 'Barras',
-                selected: true,
-                onPressed: () {},
+                selected: selectedType == ChartType.bar,
+                onPressed: () => onSelected(ChartType.bar),
               ),
             ),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: _ChartTypeButton(
-                key: ValueKey('chart-type-lines'),
+                key: const ValueKey('chart-type-lines'),
                 icon: Icons.show_chart_rounded,
                 label: 'Linhas',
+                selected: selectedType == ChartType.line,
+                onPressed: () => onSelected(ChartType.line),
               ),
             ),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: _ChartTypeButton(
-                key: ValueKey('chart-type-pie'),
+                key: const ValueKey('chart-type-pie'),
                 icon: Icons.pie_chart_outline_rounded,
                 label: 'Pizza',
+                selected: selectedType == ChartType.pie,
+                onPressed: () => onSelected(ChartType.pie),
               ),
             ),
           ],

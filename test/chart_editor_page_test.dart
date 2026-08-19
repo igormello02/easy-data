@@ -1,6 +1,6 @@
 import 'package:easy_data/features/chart_editor/chart_editor_page.dart';
 import 'package:easy_data/features/chart_editor/models/chart_data.dart';
-import 'package:easy_data/features/chart_editor/models/chart_style.dart';
+import 'package:easy_data/features/chart_editor/models/chart_type_styles.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,6 +27,13 @@ void main() {
 
   BarChart currentChart(WidgetTester tester) {
     return tester.widget<BarChart>(find.byType(BarChart));
+  }
+
+  Future<void> selectType(WidgetTester tester, String type) async {
+    final button = find.byKey(ValueKey('chart-type-$type'));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
   }
 
   Future<void> tapOption(WidgetTester tester, String key) async {
@@ -115,7 +122,7 @@ void main() {
   testWidgets('uses the default bar width', (tester) async {
     await tester.pumpWidget(buildEditor());
 
-    expect(const ChartStyle().barWidth, 20);
+    expect(const ChartTypeStyles().barWidth, 20);
     expect(currentChart(tester).data.barGroups.first.barRods.first.width, 20);
   });
 
@@ -261,7 +268,9 @@ void main() {
     );
   });
 
-  testWidgets('selects bars and disables lines and pie', (tester) async {
+  testWidgets('starts with bars selected and enables all chart types', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildEditor());
 
     final bars = tester.widget<OutlinedButton>(
@@ -284,8 +293,129 @@ void main() {
     );
 
     expect(bars.onPressed, isNotNull);
-    expect(lines.onPressed, isNull);
-    expect(pie.onPressed, isNull);
+    expect(lines.onPressed, isNotNull);
+    expect(pie.onPressed, isNotNull);
+    expect(find.byKey(const ValueKey('bar-chart-preview')), findsOneWidget);
+  });
+
+  testWidgets(
+    'switches between bars, lines and pie preserving data and title',
+    (tester) async {
+      await tester.pumpWidget(buildEditor());
+      await tester.enterText(
+        find.byKey(const ValueKey('chart-title-field')),
+        'Vendas anuais',
+      );
+
+      await selectType(tester, 'lines');
+      expect(find.byType(LineChart), findsOneWidget);
+      expect(find.text('Vendas anuais'), findsNWidgets(2));
+      expect(find.text('Janeiro'), findsOneWidget);
+
+      await selectType(tester, 'pie');
+      expect(find.byType(PieChart), findsOneWidget);
+      expect(find.text('Vendas anuais'), findsNWidgets(2));
+      expect(find.text('Janeiro'), findsOneWidget);
+
+      await selectType(tester, 'bars');
+      expect(find.byType(BarChart), findsOneWidget);
+      expect(find.text('Vendas anuais'), findsNWidgets(2));
+      expect(find.text('Janeiro'), findsOneWidget);
+    },
+  );
+
+  testWidgets('line chart renders valid values', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await selectType(tester, 'lines');
+
+    final chart = tester.widget<LineChart>(find.byType(LineChart));
+    expect(
+      chart.data.lineBarsData.single.spots.map((spot) => spot.y).toList(),
+      [4200, 5800, 5100],
+    );
+  });
+
+  testWidgets('pie chart renders proportional valid values', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await selectType(tester, 'pie');
+
+    final chart = tester.widget<PieChart>(find.byType(PieChart));
+    expect(chart.data.sections.map((section) => section.value).toList(), [
+      4200,
+      5800,
+      5100,
+    ]);
+  });
+
+  testWidgets('line width updates immediately', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await selectType(tester, 'lines');
+    await expandOptions(tester);
+    final sliderFinder = find.byKey(const ValueKey('line-width-slider'));
+    await tester.ensureVisible(sliderFinder);
+    final slider = tester.widget<Slider>(sliderFinder);
+
+    slider.onChanged!(7);
+    await tester.pump();
+
+    final chart = tester.widget<LineChart>(find.byType(LineChart));
+    expect(chart.data.lineBarsData.single.barWidth, 7);
+  });
+
+  testWidgets('pie hole size updates immediately', (tester) async {
+    await tester.pumpWidget(buildEditor());
+    await selectType(tester, 'pie');
+    await expandOptions(tester);
+    final sliderFinder = find.byKey(const ValueKey('pie-hole-slider'));
+    await tester.ensureVisible(sliderFinder);
+    final slider = tester.widget<Slider>(sliderFinder);
+
+    slider.onChanged!(70);
+    await tester.pump();
+
+    final chart = tester.widget<PieChart>(find.byType(PieChart));
+    expect(chart.data.centerSpaceRadius, closeTo(43.4, 0.01));
+  });
+
+  testWidgets('shows only controls relevant to the selected type', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildEditor());
+    await expandOptions(tester);
+    expect(find.byKey(const ValueKey('bar-width-slider')), findsOneWidget);
+    expect(find.byKey(const ValueKey('line-width-slider')), findsNothing);
+    expect(find.byKey(const ValueKey('pie-hole-slider')), findsNothing);
+
+    await selectType(tester, 'lines');
+    expect(find.byKey(const ValueKey('bar-width-slider')), findsNothing);
+    expect(find.byKey(const ValueKey('line-width-slider')), findsOneWidget);
+    expect(find.byKey(const ValueKey('show-grid')), findsOneWidget);
+
+    await selectType(tester, 'pie');
+    expect(find.byKey(const ValueKey('line-width-slider')), findsNothing);
+    expect(find.byKey(const ValueKey('pie-hole-slider')), findsOneWidget);
+    expect(find.byKey(const ValueKey('show-grid')), findsNothing);
+    expect(find.byKey(const ValueKey('show-x-axis')), findsNothing);
+    expect(find.byKey(const ValueKey('show-y-axis')), findsNothing);
+  });
+
+  testWidgets('invalid pie values show a message without crashing', (
+    tester,
+  ) async {
+    const invalidData = ChartData(
+      points: [
+        ChartDataPoint(category: 'A', value: 10),
+        ChartDataPoint(category: 'B', value: 0),
+        ChartDataPoint(category: 'C', value: -5),
+      ],
+    );
+    await tester.pumpWidget(
+      const MaterialApp(home: ChartEditorPage(data: invalidData)),
+    );
+    await selectType(tester, 'pie');
+
+    expect(find.byKey(const ValueKey('invalid-pie-data')), findsOneWidget);
+    expect(find.byType(PieChart), findsNothing);
   });
 
   testWidgets('returns to data when tapping Dados', (tester) async {

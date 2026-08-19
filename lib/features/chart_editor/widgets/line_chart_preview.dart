@@ -7,29 +7,42 @@ import '../models/chart_data.dart';
 import '../models/chart_style.dart';
 import '../models/chart_type_styles.dart';
 
-class BarChartPreview extends StatelessWidget {
-  const BarChartPreview({
+class LineChartPreview extends StatelessWidget {
+  const LineChartPreview({
     super.key,
     required this.data,
     required this.style,
-    required this.barStyle,
+    required this.lineStyle,
   });
 
   final ChartData data;
   final ChartStyle style;
-  final ChartTypeStyles barStyle;
+  final ChartTypeStyles lineStyle;
 
   @override
   Widget build(BuildContext context) {
     final values = data.points.map((point) => point.value).toList();
     final maximum = values.reduce(math.max);
     final minimum = values.reduce(math.min);
-    final axisMinimum = minimum < 0 ? minimum * 1.15 : 0.0;
-    final axisMaximum = maximum > 0 ? maximum * 1.15 : 1.0;
+    final padding = math.max((maximum - minimum).abs() * 0.15, 1.0);
+    final axisMinimum = minimum < 0 ? minimum - padding : 0.0;
+    final axisMaximum = maximum > 0 ? maximum + padding : padding;
     final interval = _axisInterval(axisMinimum, axisMaximum);
+    final spots = [
+      for (var index = 0; index < data.points.length; index++)
+        FlSpot(index.toDouble(), data.points[index].value),
+    ];
+    final line = LineChartBarData(
+      spots: spots,
+      color: Color(style.primaryColor),
+      barWidth: lineStyle.lineWidth,
+      isCurved: false,
+      dotData: const FlDotData(show: true),
+      belowBarData: BarAreaData(show: false),
+    );
 
     return Container(
-      key: const ValueKey('bar-chart-preview'),
+      key: const ValueKey('line-chart-preview'),
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
       decoration: BoxDecoration(
         color: const Color(0xFFFAFAFA),
@@ -59,41 +72,48 @@ class BarChartPreview extends StatelessWidget {
                 final labelWidth = data.points
                     .map((point) => _categorySlotWidth(point.category))
                     .reduce(math.max);
-                final categoryWidth = math.max(
-                  labelWidth,
-                  barStyle.barWidth + 24,
-                );
                 final chartWidth = math.max(
                   constraints.maxWidth,
-                  data.points.length * categoryWidth,
+                  data.points.length * labelWidth,
                 );
 
                 return SingleChildScrollView(
-                  key: const ValueKey('chart-horizontal-scroll'),
+                  key: const ValueKey('line-chart-horizontal-scroll'),
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
                     width: chartWidth,
-                    child: BarChart(
-                      BarChartData(
+                    child: LineChart(
+                      LineChartData(
+                        minX: 0,
+                        maxX: math.max(1, data.points.length - 1).toDouble(),
                         minY: axisMinimum,
                         maxY: axisMaximum,
-                        alignment: BarChartAlignment.spaceAround,
-                        barTouchData: BarTouchData(
+                        lineBarsData: [line],
+                        showingTooltipIndicators: style.showValues
+                            ? [
+                                for (final spot in spots)
+                                  ShowingTooltipIndicators([
+                                    LineBarSpot(line, 0, spot),
+                                  ]),
+                              ]
+                            : const [],
+                        lineTouchData: LineTouchData(
                           enabled: false,
-                          touchTooltipData: BarTouchTooltipData(
+                          touchTooltipData: LineTouchTooltipData(
                             getTooltipColor: (_) => Colors.transparent,
                             tooltipPadding: EdgeInsets.zero,
-                            tooltipMargin: 4,
-                            getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                              return BarTooltipItem(
-                                _formatValue(rod.toY),
-                                const TextStyle(
-                                  color: Color(0xFF555555),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
+                            tooltipMargin: 6,
+                            getTooltipItems: (spots) => [
+                              for (final spot in spots)
+                                LineTooltipItem(
+                                  _formatValue(spot.y),
+                                  const TextStyle(
+                                    color: Color(0xFF555555),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              );
-                            },
+                            ],
                           ),
                         ),
                         borderData: FlBorderData(
@@ -145,16 +165,19 @@ class BarChartPreview extends StatelessWidget {
                             sideTitles: SideTitles(
                               showTitles: style.showXAxis,
                               reservedSize: 46,
+                              interval: 1,
                               getTitlesWidget: (value, meta) {
                                 final index = value.toInt();
-                                if (index < 0 || index >= data.points.length) {
+                                if (value != index ||
+                                    index < 0 ||
+                                    index >= data.points.length) {
                                   return const SizedBox.shrink();
                                 }
                                 return SideTitleWidget(
                                   meta: meta,
                                   space: 8,
                                   child: SizedBox(
-                                    width: categoryWidth - 8,
+                                    width: labelWidth - 8,
                                     child: Text(
                                       data.points[index].category,
                                       textAlign: TextAlign.center,
@@ -172,29 +195,6 @@ class BarChartPreview extends StatelessWidget {
                             ),
                           ),
                         ),
-                        barGroups: [
-                          for (
-                            var index = 0;
-                            index < data.points.length;
-                            index++
-                          )
-                            BarChartGroupData(
-                              x: index,
-                              showingTooltipIndicators: style.showValues
-                                  ? const [0]
-                                  : const [],
-                              barRods: [
-                                BarChartRodData(
-                                  toY: data.points[index].value,
-                                  width: barStyle.barWidth,
-                                  color: Color(style.primaryColor),
-                                  borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(5),
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
                       ),
                       duration: const Duration(milliseconds: 200),
                     ),
@@ -238,8 +238,7 @@ class BarChartPreview extends StatelessWidget {
     if (absolute >= 1000) {
       return '${(value / 1000).toStringAsFixed(1)}k';
     }
-    if (value == value.roundToDouble()) return value.toInt().toString();
-    return value.toStringAsFixed(1);
+    return _formatValue(value);
   }
 
   String _formatValue(double value) {

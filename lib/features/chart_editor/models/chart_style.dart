@@ -3,7 +3,6 @@ class ChartStyle {
     this.title = 'Meu gráfico',
     this.showTitle = true,
     this.titleSize = 16,
-    this.barWidth = 20,
     this.primaryColor = 0xFF171717,
     this.showValues = false,
     this.showGrid = true,
@@ -14,7 +13,6 @@ class ChartStyle {
   final String title;
   final bool showTitle;
   final double titleSize;
-  final double barWidth;
   final int primaryColor;
   final bool showValues;
   final bool showGrid;
@@ -25,7 +23,6 @@ class ChartStyle {
     String? title,
     bool? showTitle,
     double? titleSize,
-    double? barWidth,
     int? primaryColor,
     bool? showValues,
     bool? showGrid,
@@ -36,7 +33,6 @@ class ChartStyle {
       title: title ?? this.title,
       showTitle: showTitle ?? this.showTitle,
       titleSize: titleSize ?? this.titleSize,
-      barWidth: barWidth ?? this.barWidth,
       primaryColor: primaryColor ?? this.primaryColor,
       showValues: showValues ?? this.showValues,
       showGrid: showGrid ?? this.showGrid,
