@@ -1,15 +1,86 @@
 import 'package:flutter/material.dart';
 
 import '../../data_editor/data_editor_page.dart';
+import '../../data_editor/models/data_table_model.dart';
+import '../../data_import/data_import_services.dart';
+import '../../data_import/models/imported_table_data.dart';
+import '../../data_import/table_import_parser.dart';
 
-class DataSourceBottomSheet extends StatelessWidget {
-  const DataSourceBottomSheet({super.key});
+class DataSourceBottomSheet extends StatefulWidget {
+  const DataSourceBottomSheet({
+    super.key,
+    this.clipboardReader = const SystemClipboardReader(),
+    this.csvFilePicker = const NativeCsvFilePicker(),
+    this.parser = const TableImportParser(),
+  });
 
-  void _openEditor(BuildContext context) {
-    Navigator.of(context).pop();
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const DataEditorPage()));
+  final ClipboardReader clipboardReader;
+  final CsvFilePicker csvFilePicker;
+  final TableImportParser parser;
+
+  @override
+  State<DataSourceBottomSheet> createState() => _DataSourceBottomSheetState();
+}
+
+class _DataSourceBottomSheetState extends State<DataSourceBottomSheet> {
+  bool _isLoading = false;
+
+  void _openEditor([DataTableModel? table]) {
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => DataEditorPage(initialTable: table),
+      ),
+    );
+  }
+
+  Future<void> _pasteClipboard() async {
+    await _runImport(() async {
+      final content = await widget.clipboardReader.readText();
+      return widget.parser.parseClipboard(content);
+    }, fallbackMessage: 'Não foi possível acessar a área de transferência.');
+  }
+
+  Future<void> _importCsv() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      final bytes = await widget.csvFilePicker.pickBytes();
+      if (bytes == null || !mounted) return;
+      final imported = widget.parser.parseCsvBytes(bytes);
+      _openEditor(DataTableModel.fromImported(imported));
+    } on TableImportException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } on Object {
+      if (mounted) _showMessage('Não foi possível importar o arquivo CSV.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _runImport(
+    Future<ImportedTableData> Function() operation, {
+    required String fallbackMessage,
+  }) async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      final imported = await operation();
+      if (mounted) _openEditor(DataTableModel.fromImported(imported));
+    } on TableImportException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } on Object {
+      if (mounted) _showMessage(fallbackMessage);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -49,21 +120,21 @@ class DataSourceBottomSheet extends StatelessWidget {
             icon: Icons.assignment_outlined,
             title: 'Colar do Excel',
             subtitle: 'Cole dados copiados da planilha',
-            onTap: () => _openEditor(context),
+            onTap: _isLoading ? null : _pasteClipboard,
           ),
           const Divider(height: 1, indent: 24, endIndent: 24),
           _DataSourceTile(
             icon: Icons.upload_file_outlined,
             title: 'Importar CSV',
             subtitle: 'Selecione um arquivo do dispositivo',
-            onTap: () => _openEditor(context),
+            onTap: _isLoading ? null : _importCsv,
           ),
           const Divider(height: 1, indent: 24, endIndent: 24),
           _DataSourceTile(
             icon: Icons.add_box_outlined,
             title: 'Digitar manualmente',
             subtitle: 'Insira os dados linha por linha',
-            onTap: () => _openEditor(context),
+            onTap: _isLoading ? null : _openEditor,
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
@@ -103,7 +174,7 @@ class _DataSourceTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

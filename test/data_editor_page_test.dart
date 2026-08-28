@@ -1,5 +1,7 @@
 import 'package:easy_data/features/data_editor/data_editor_page.dart';
 import 'package:easy_data/features/chart_editor/chart_editor_page.dart';
+import 'package:easy_data/features/data_editor/models/data_table_model.dart';
+import 'package:easy_data/features/data_import/models/imported_table_data.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -14,6 +16,143 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('cell-0-0')), 'Janeiro');
 
     expect(find.text('Janeiro'), findsOneWidget);
+  });
+
+  testWidgets('receives imported columns and rows and keeps them editable', (
+    tester,
+  ) async {
+    final table = DataTableModel.fromImported(
+      const ImportedTableData(
+        columns: ['Cidade', 'Valor'],
+        rows: [
+          ['São Paulo', '120'],
+          ['Curitiba', '90'],
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: DataEditorPage(initialTable: table)),
+    );
+
+    expect(find.text('Cidade'), findsOneWidget);
+    expect(find.text('São Paulo'), findsOneWidget);
+    expect(find.text('Curitiba'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('cell-0-0')), 'Santos');
+    expect(find.text('Santos'), findsOneWidget);
+  });
+
+  testWidgets(
+    'uses the selected value column when imported text exists in the middle',
+    (tester) async {
+      final table = DataTableModel.fromImported(
+        const ImportedTableData(
+          columns: ['Cidade', 'Descrição', 'Valor'],
+          rows: [
+            ['São Paulo', 'Região Sudeste', '120'],
+            ['Rio de Janeiro', 'Capital, RJ', '90'],
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: DataEditorPage(initialTable: table)),
+      );
+
+      expect(
+        find.byKey(const ValueKey('category-column-selector')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('value-column-selector')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('generate-chart')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Use apenas números na coluna Valor.'), findsNothing);
+      final editor = tester.widget<ChartEditorPage>(
+        find.byType(ChartEditorPage),
+      );
+      expect(editor.data.points.map((point) => point.category), [
+        'São Paulo',
+        'Rio de Janeiro',
+      ]);
+      expect(editor.data.points.map((point) => point.value), [120, 90]);
+    },
+  );
+
+  testWidgets('allows choosing category and value columns explicitly', (
+    tester,
+  ) async {
+    final table = DataTableModel.fromImported(
+      const ImportedTableData(
+        columns: ['Cidade', 'População', 'Índice'],
+        rows: [
+          ['São Paulo', '120', '8'],
+          ['Curitiba', '90', '6'],
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: DataEditorPage(initialTable: table)),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('value-column-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('População').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('generate-chart')));
+    await tester.pumpAndSettle();
+
+    final editor = tester.widget<ChartEditorPage>(find.byType(ChartEditorPage));
+    expect(editor.data.points.map((point) => point.value), [120, 90]);
+  });
+
+  testWidgets('multiple columns scroll horizontally to the last full column', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final table = DataTableModel.fromImported(
+      const ImportedTableData(
+        columns: [
+          'Cidade com nome longo',
+          'Descrição detalhada',
+          'Região metropolitana',
+          'Observações adicionais',
+          'Valor',
+        ],
+        rows: [
+          [
+            'Mogi das Cruzes',
+            'Região Metropolitana',
+            'Sudeste',
+            'Texto maior para edição',
+            '67',
+          ],
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: DataEditorPage(initialTable: table)),
+    );
+
+    final scroll = find.byKey(const ValueKey('table-horizontal-scroll'));
+    final content = find.byKey(const ValueKey('editable-table-content'));
+    final lastCell = find.byKey(const ValueKey('cell-0-4'));
+    expect(scroll, findsOneWidget);
+    expect(tester.getSize(content).width, greaterThan(360));
+    expect(tester.getRect(lastCell).left, greaterThan(360));
+
+    final controller = tester.widget<SingleChildScrollView>(scroll).controller!;
+    expect(controller.position.maxScrollExtent, greaterThan(0));
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pump();
+
+    final visibleRect = tester.getRect(lastCell);
+    expect(visibleRect.left, greaterThanOrEqualTo(0));
+    expect(visibleRect.right, lessThanOrEqualTo(360));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('edits a column name', (tester) async {

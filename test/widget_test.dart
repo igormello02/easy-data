@@ -36,7 +36,7 @@ void main() {
 
     await tester.tap(find.text('Criar gráfico'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Colar do Excel'));
+    await tester.tap(find.text('Digitar manualmente'));
     await tester.pumpAndSettle();
 
     expect(find.text('Dados'), findsOneWidget);

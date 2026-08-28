@@ -7,14 +7,28 @@ import '../chart_editor/models/chart_data.dart';
 import 'models/data_table_model.dart';
 
 class DataEditorPage extends StatefulWidget {
-  const DataEditorPage({super.key});
+  const DataEditorPage({super.key, this.initialTable});
+
+  final DataTableModel? initialTable;
 
   @override
   State<DataEditorPage> createState() => _DataEditorPageState();
 }
 
 class _DataEditorPageState extends State<DataEditorPage> {
-  final DataTableModel _table = DataTableModel.initial();
+  late final DataTableModel _table;
+  late int _categoryColumnId;
+  late int _valueColumnId;
+
+  @override
+  void initState() {
+    super.initState();
+    _table = widget.initialTable?.snapshot() ?? DataTableModel.initial();
+    _categoryColumnId = _table.columns.first.id;
+    _valueColumnId = _table.columns.length == 2
+        ? _table.columns[1].id
+        : _table.columns.last.id;
+  }
 
   void _addRow() {
     setState(_table.addRow);
@@ -34,7 +48,22 @@ class _DataEditorPageState extends State<DataEditorPage> {
       return;
     }
 
-    setState(() => _table.removeColumn(columnId));
+    setState(() {
+      _table.removeColumn(columnId);
+      _repairColumnSelection();
+    });
+  }
+
+  void _repairColumnSelection() {
+    final ids = _table.columns.map((column) => column.id).toSet();
+    if (!ids.contains(_categoryColumnId)) {
+      _categoryColumnId = _table.columns.first.id;
+    }
+    if (!ids.contains(_valueColumnId) || _valueColumnId == _categoryColumnId) {
+      _valueColumnId = _table.columns
+          .firstWhere((column) => column.id != _categoryColumnId)
+          .id;
+    }
   }
 
   void _generateChart() {
@@ -53,8 +82,8 @@ class _DataEditorPageState extends State<DataEditorPage> {
             points: [
               for (final row in _table.rows)
                 ChartDataPoint(
-                  category: row.values[_table.columns[0].id]!.trim(),
-                  value: _parseNumber(row.values[_table.columns[1].id]!.trim()),
+                  category: row.values[_categoryColumnId]!.trim(),
+                  value: _parseNumber(row.values[_valueColumnId]!.trim()),
                 ),
             ],
           ),
@@ -75,8 +104,8 @@ class _DataEditorPageState extends State<DataEditorPage> {
     }
 
     for (final row in _table.rows) {
-      final category = row.values[_table.columns[0].id]?.trim() ?? '';
-      final value = row.values[_table.columns[1].id]?.trim() ?? '';
+      final category = row.values[_categoryColumnId]?.trim() ?? '';
+      final value = row.values[_valueColumnId]?.trim() ?? '';
       if (category.isEmpty || value.isEmpty) {
         return 'Preencha Categoria e Valor em todas as linhas.';
       }
@@ -147,9 +176,25 @@ class _DataEditorPageState extends State<DataEditorPage> {
                 children: [
                   _EditableTable(
                     table: _table,
+                    valueColumnId: _valueColumnId,
                     onRemoveRow: _removeRow,
                     onRemoveColumn: _removeColumn,
                   ),
+                  if (_table.columns.length > 2)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                      child: _ChartColumnsSelector(
+                        columns: _table.columns,
+                        categoryColumnId: _categoryColumnId,
+                        valueColumnId: _valueColumnId,
+                        onCategoryChanged: (columnId) {
+                          setState(() => _categoryColumnId = columnId);
+                        },
+                        onValueChanged: (columnId) {
+                          setState(() => _valueColumnId = columnId);
+                        },
+                      ),
+                    ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                     child: Wrap(
@@ -233,19 +278,35 @@ class _ProgressIndicator extends StatelessWidget {
   }
 }
 
-class _EditableTable extends StatelessWidget {
+class _EditableTable extends StatefulWidget {
   const _EditableTable({
     required this.table,
+    required this.valueColumnId,
     required this.onRemoveRow,
     required this.onRemoveColumn,
   });
 
   final DataTableModel table;
+  final int valueColumnId;
   final ValueChanged<int> onRemoveRow;
   final ValueChanged<int> onRemoveColumn;
 
   @override
+  State<_EditableTable> createState() => _EditableTableState();
+}
+
+class _EditableTableState extends State<_EditableTable> {
+  final ScrollController _horizontalController = ScrollController();
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final table = widget.table;
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableForColumns =
@@ -253,12 +314,11 @@ class _EditableTable extends StatelessWidget {
         final columnWidths = table.columns.length == 2
             ? [
                 math.max(150.0, availableForColumns * 0.68),
-                math.max(84.0, availableForColumns * 0.32),
+                math.max(96.0, availableForColumns * 0.32),
               ]
             : [
-                180.0,
-                for (var index = 1; index < table.columns.length; index++)
-                  112.0,
+                for (final column in table.columns)
+                  column.id == widget.valueColumnId ? 128.0 : 184.0,
               ];
         final contentWidth =
             40 +
@@ -266,40 +326,25 @@ class _EditableTable extends StatelessWidget {
             columnWidths.fold<double>(0, (sum, width) => sum + width + 8);
         final tableWidth = math.max(constraints.maxWidth, contentWidth);
 
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: tableWidth,
-            child: Column(
-              children: [
-                Container(
-                  height: 44,
-                  color: const Color(0xFFF7F7F7),
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      for (var index = 0; index < table.columns.length; index++)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: SizedBox(
-                            width: columnWidths[index],
-                            child: _ColumnHeader(
-                              column: table.columns[index],
-                              canRemove: table.canRemoveColumn,
-                              onRemove: () =>
-                                  onRemoveColumn(table.columns[index].id),
-                            ),
-                          ),
-                        ),
-                      const SizedBox(width: 44),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                for (final row in table.rows) ...[
-                  Padding(
-                    key: ValueKey('row-${row.id}'),
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+        return Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: tableWidth > constraints.maxWidth,
+          interactive: true,
+          thickness: 4,
+          radius: const Radius.circular(2),
+          child: SingleChildScrollView(
+            key: const ValueKey('table-horizontal-scroll'),
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              key: const ValueKey('editable-table-content'),
+              width: tableWidth,
+              child: Column(
+                children: [
+                  Container(
+                    height: 44,
+                    color: const Color(0xFFF7F7F7),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Row(
                       children: [
                         for (
@@ -311,69 +356,103 @@ class _EditableTable extends StatelessWidget {
                             padding: const EdgeInsets.only(right: 8),
                             child: SizedBox(
                               width: columnWidths[index],
-                              height: 48,
-                              child: TextFormField(
-                                key: ValueKey(
-                                  'cell-${row.id}-${table.columns[index].id}',
+                              child: _ColumnHeader(
+                                column: table.columns[index],
+                                canRemove: table.canRemoveColumn,
+                                onRemove: () => widget.onRemoveColumn(
+                                  table.columns[index].id,
                                 ),
-                                initialValue:
-                                    row.values[table.columns[index].id] ?? '',
-                                onChanged: (value) {
-                                  row.values[table.columns[index].id] = value;
-                                },
-                                keyboardType: index == 1
-                                    ? const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                        signed: true,
-                                      )
-                                    : TextInputType.text,
-                                hintLocales: index == 1
-                                    ? null
-                                    : const [Locale('pt', 'BR')],
-                                textInputAction: TextInputAction.next,
-                                decoration: const InputDecoration(
-                                  filled: true,
-                                  fillColor: Color(0xFFFAFAFA),
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 44),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  for (final row in table.rows) ...[
+                    Padding(
+                      key: ValueKey('row-${row.id}'),
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                      child: Row(
+                        children: [
+                          for (
+                            var index = 0;
+                            index < table.columns.length;
+                            index++
+                          )
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: SizedBox(
+                                width: columnWidths[index],
+                                height: 48,
+                                child: TextFormField(
+                                  key: ValueKey(
+                                    'cell-${row.id}-${table.columns[index].id}',
                                   ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFFE1E1E1),
+                                  initialValue:
+                                      row.values[table.columns[index].id] ?? '',
+                                  onChanged: (value) {
+                                    row.values[table.columns[index].id] = value;
+                                  },
+                                  keyboardType:
+                                      table.columns[index].id ==
+                                          widget.valueColumnId
+                                      ? const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                          signed: true,
+                                        )
+                                      : TextInputType.text,
+                                  hintLocales:
+                                      table.columns[index].id ==
+                                          widget.valueColumnId
+                                      ? null
+                                      : const [Locale('pt', 'BR')],
+                                  textInputAction: TextInputAction.next,
+                                  decoration: const InputDecoration(
+                                    filled: true,
+                                    fillColor: Color(0xFFFAFAFA),
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12,
                                     ),
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(8),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderSide: BorderSide(
+                                        color: Color(0xFFE1E1E1),
+                                      ),
+                                      borderRadius: BorderRadius.all(
+                                        Radius.circular(8),
+                                      ),
                                     ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF777777),
-                                    ),
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(8),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderSide: BorderSide(
+                                        color: Color(0xFF777777),
+                                      ),
+                                      borderRadius: BorderRadius.all(
+                                        Radius.circular(8),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
+                          SizedBox(
+                            width: 44,
+                            height: 48,
+                            child: IconButton(
+                              key: ValueKey('remove-row-${row.id}'),
+                              onPressed: () => widget.onRemoveRow(row.id),
+                              tooltip: 'Remover linha',
+                              icon: const Icon(Icons.remove_rounded, size: 20),
+                              color: const Color(0xFFAAAAAA),
+                            ),
                           ),
-                        SizedBox(
-                          width: 44,
-                          height: 48,
-                          child: IconButton(
-                            key: ValueKey('remove-row-${row.id}'),
-                            onPressed: () => onRemoveRow(row.id),
-                            tooltip: 'Remover linha',
-                            icon: const Icon(Icons.remove_rounded, size: 20),
-                            color: const Color(0xFFAAAAAA),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const Divider(height: 1),
+                    const Divider(height: 1),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         );
@@ -430,6 +509,120 @@ class _ColumnHeader extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _ChartColumnsSelector extends StatelessWidget {
+  const _ChartColumnsSelector({
+    required this.columns,
+    required this.categoryColumnId,
+    required this.valueColumnId,
+    required this.onCategoryChanged,
+    required this.onValueChanged,
+  });
+
+  final List<TableColumn> columns;
+  final int categoryColumnId;
+  final int valueColumnId;
+  final ValueChanged<int> onCategoryChanged;
+  final ValueChanged<int> onValueChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFA),
+        border: Border.all(color: const Color(0xFFD8D8D8)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Colunas do gráfico',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Escolha quais colunas serão usadas no gráfico.',
+            style: TextStyle(color: Color(0xFF777777), fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _ColumnSelectorField(
+                  key: ValueKey('category-column-$categoryColumnId'),
+                  fieldKey: const ValueKey('category-column-selector'),
+                  label: 'Categoria',
+                  selectedId: categoryColumnId,
+                  columns: columns
+                      .where((column) => column.id != valueColumnId)
+                      .toList(),
+                  onChanged: onCategoryChanged,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ColumnSelectorField(
+                  key: ValueKey('value-column-$valueColumnId'),
+                  fieldKey: const ValueKey('value-column-selector'),
+                  label: 'Valor',
+                  selectedId: valueColumnId,
+                  columns: columns
+                      .where((column) => column.id != categoryColumnId)
+                      .toList(),
+                  onChanged: onValueChanged,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColumnSelectorField extends StatelessWidget {
+  const _ColumnSelectorField({
+    super.key,
+    required this.fieldKey,
+    required this.label,
+    required this.selectedId,
+    required this.columns,
+    required this.onChanged,
+  });
+
+  final Key fieldKey;
+  final String label;
+  final int selectedId;
+  final List<TableColumn> columns;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<int>(
+      key: fieldKey,
+      initialValue: selectedId,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label),
+      items: [
+        for (final column in columns)
+          DropdownMenuItem(
+            value: column.id,
+            child: Text(
+              column.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      onChanged: (columnId) {
+        if (columnId != null) onChanged(columnId);
+      },
     );
   }
 }

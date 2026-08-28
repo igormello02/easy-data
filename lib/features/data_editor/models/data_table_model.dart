@@ -1,3 +1,5 @@
+import '../../data_import/models/imported_table_data.dart';
+
 class TableColumn {
   TableColumn({required this.id, required this.name});
 
@@ -13,7 +15,12 @@ class TableRowData {
 }
 
 class DataTableModel {
-  DataTableModel({required this.columns, required this.rows});
+  DataTableModel({
+    required this.columns,
+    required this.rows,
+    this._nextColumnId = 2,
+    this._nextRowId = 1,
+  });
 
   factory DataTableModel.initial() {
     return DataTableModel(
@@ -27,11 +34,36 @@ class DataTableModel {
     );
   }
 
+  factory DataTableModel.fromImported(ImportedTableData data) {
+    return DataTableModel(
+      columns: [
+        for (var index = 0; index < data.columns.length; index++)
+          TableColumn(id: index, name: data.columns[index]),
+      ],
+      rows: [
+        for (var rowIndex = 0; rowIndex < data.rows.length; rowIndex++)
+          TableRowData(
+            id: rowIndex,
+            values: {
+              for (
+                var columnIndex = 0;
+                columnIndex < data.columns.length;
+                columnIndex++
+              )
+                columnIndex: data.rows[rowIndex][columnIndex],
+            },
+          ),
+      ],
+      nextColumnId: data.columns.length,
+      nextRowId: data.rows.length,
+    );
+  }
+
   final List<TableColumn> columns;
   final List<TableRowData> rows;
 
-  int _nextColumnId = 2;
-  int _nextRowId = 1;
+  int _nextColumnId;
+  int _nextRowId;
 
   bool get canRemoveColumn => columns.length > 2;
 
@@ -74,6 +106,8 @@ class DataTableModel {
         for (final row in rows)
           TableRowData(id: row.id, values: Map<int, String>.from(row.values)),
       ],
+      nextColumnId: _nextColumnId,
+      nextRowId: _nextRowId,
     );
   }
 }
