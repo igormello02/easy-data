@@ -1,9 +1,19 @@
 import 'package:easy_data/features/data_editor/data_editor_page.dart';
 import 'package:easy_data/features/chart_editor/chart_editor_page.dart';
 import 'package:easy_data/features/data_editor/models/data_table_model.dart';
+import 'package:easy_data/features/data_import/data_import_services.dart';
 import 'package:easy_data/features/data_import/models/imported_table_data.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _FakeClipboard implements ClipboardReader {
+  _FakeClipboard(this.value);
+
+  final String? value;
+
+  @override
+  Future<String?> readText() async => value;
+}
 
 void main() {
   Widget buildEditor() {
@@ -16,6 +26,82 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('cell-0-0')), 'Janeiro');
 
     expect(find.text('Janeiro'), findsOneWidget);
+  });
+
+  testWidgets('pastes a valid clipboard table into the empty editor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DataEditorPage(
+          clipboardReader: _FakeClipboard(
+            'Categoria\tValor\nJaneiro\t10\nFevereiro\t20',
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('paste-data')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Janeiro'), findsOneWidget);
+    expect(find.text('Fevereiro'), findsOneWidget);
+    expect(find.text('20'), findsOneWidget);
+    expect(find.text('Substituir dados?'), findsNothing);
+  });
+
+  testWidgets('shows a message for an invalid clipboard in the editor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DataEditorPage(clipboardReader: _FakeClipboard('texto')),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('paste-data')));
+    await tester.pump();
+
+    expect(
+      find.text('Não encontramos uma tabela válida na área de transferência.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('confirms before replacing existing data from clipboard', (
+    tester,
+  ) async {
+    final table = DataTableModel.fromImported(
+      const ImportedTableData(
+        columns: ['Cidade', 'Valor'],
+        rows: [
+          ['Curitiba', '90'],
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DataEditorPage(
+          initialTable: table,
+          clipboardReader: _FakeClipboard('Cidade\tValor\nÉvora\t50'),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('paste-data')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Isso substituirá os dados atuais. Continuar?'),
+      findsOneWidget,
+    );
+    expect(find.text('Curitiba'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('confirm-paste-data')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Curitiba'), findsNothing);
+    expect(find.text('Évora'), findsOneWidget);
+    expect(find.text('50'), findsOneWidget);
   });
 
   testWidgets('receives imported columns and rows and keeps them editable', (

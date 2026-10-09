@@ -25,7 +25,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Como deseja inserir os dados?'), findsOneWidget);
-    expect(find.text('Colar do Excel'), findsOneWidget);
+    expect(find.text('Importar Excel'), findsOneWidget);
+    expect(find.text('Colar do Excel'), findsNothing);
     expect(find.text('Importar CSV'), findsOneWidget);
     expect(find.text('Digitar manualmente'), findsOneWidget);
     expect(find.text('Cancelar'), findsOneWidget);

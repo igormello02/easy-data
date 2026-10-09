@@ -28,6 +28,7 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  archive: ^4.0.7
   flutter:
     sdk: flutter
 
@@ -35,8 +36,11 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   csv: ^8.0.0
+  file: ^7.0.1
   file_picker: ^12.1.2
   fl_chart: 1.2.0
+  open_xml:
+    path: packages/open_xml
 
 dev_dependencies:
   flutter_test:

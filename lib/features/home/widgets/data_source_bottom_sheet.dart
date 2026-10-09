@@ -3,20 +3,22 @@ import 'package:flutter/material.dart';
 import '../../data_editor/data_editor_page.dart';
 import '../../data_editor/models/data_table_model.dart';
 import '../../data_import/data_import_services.dart';
-import '../../data_import/models/imported_table_data.dart';
+import '../../data_import/excel_table_parser.dart';
 import '../../data_import/table_import_parser.dart';
 
 class DataSourceBottomSheet extends StatefulWidget {
   const DataSourceBottomSheet({
     super.key,
-    this.clipboardReader = const SystemClipboardReader(),
+    this.excelFilePicker = const NativeExcelFilePicker(),
     this.csvFilePicker = const NativeCsvFilePicker(),
-    this.parser = const TableImportParser(),
+    this.excelParser = const ExcelTableParser(),
+    this.tableParser = const TableImportParser(),
   });
 
-  final ClipboardReader clipboardReader;
+  final ExcelFilePicker excelFilePicker;
   final CsvFilePicker csvFilePicker;
-  final TableImportParser parser;
+  final ExcelTableParser excelParser;
+  final TableImportParser tableParser;
 
   @override
   State<DataSourceBottomSheet> createState() => _DataSourceBottomSheetState();
@@ -35,11 +37,80 @@ class _DataSourceBottomSheetState extends State<DataSourceBottomSheet> {
     );
   }
 
-  Future<void> _pasteClipboard() async {
-    await _runImport(() async {
-      final content = await widget.clipboardReader.readText();
-      return widget.parser.parseClipboard(content);
-    }, fallbackMessage: 'Não foi possível acessar a área de transferência.');
+  Future<void> _importExcel() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      final picked = await widget.excelFilePicker.pickFile();
+      if (picked == null || !mounted) return;
+      if (picked.name.trim().isEmpty ||
+          picked.extension?.toLowerCase() != 'xlsx' ||
+          picked.bytes.isEmpty) {
+        throw const TableImportException(
+          ExcelTableParser.couldNotReadFileMessage,
+        );
+      }
+
+      final workbook = await widget.excelParser.openWorkbook(picked.bytes);
+      ExcelSheetData? selectedSheet;
+      if (workbook.sheets.length == 1) {
+        selectedSheet = workbook.sheets.single;
+      } else {
+        final sheetName = await _selectSheet(workbook.sheets);
+        if (sheetName == null || !mounted) return;
+        selectedSheet = workbook.sheets.firstWhere(
+          (sheet) => sheet.name == sheetName,
+        );
+      }
+
+      final imported = widget.excelParser.parseSheet(selectedSheet);
+      if (mounted) _openEditor(DataTableModel.fromImported(imported));
+    } on TableImportException catch (error, stackTrace) {
+      debugPrint('Excel import error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) await _showMessage(error.message);
+    } on Object catch (error, stackTrace) {
+      debugPrint('Excel import error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        await _showMessage(ExcelTableParser.couldNotReadFileMessage);
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<String?> _selectSheet(List<ExcelSheetData> sheets) {
+    return showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Selecionar planilha'),
+        children: [
+          for (final sheet in sheets)
+            SimpleDialogOption(
+              key: ValueKey('excel-sheet-${sheet.name}'),
+              onPressed: () => Navigator.of(context).pop(sheet.name),
+              child: Row(
+                children: [
+                  const Icon(Icons.table_chart_outlined, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      sheet.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _importCsv() async {
@@ -48,39 +119,32 @@ class _DataSourceBottomSheetState extends State<DataSourceBottomSheet> {
     try {
       final bytes = await widget.csvFilePicker.pickBytes();
       if (bytes == null || !mounted) return;
-      final imported = widget.parser.parseCsvBytes(bytes);
+      final imported = widget.tableParser.parseCsvBytes(bytes);
       _openEditor(DataTableModel.fromImported(imported));
     } on TableImportException catch (error) {
-      if (mounted) _showMessage(error.message);
+      if (mounted) await _showMessage(error.message);
     } on Object {
-      if (mounted) _showMessage('Não foi possível importar o arquivo CSV.');
+      if (mounted) {
+        await _showMessage('Não foi possível importar o arquivo CSV.');
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _runImport(
-    Future<ImportedTableData> Function() operation, {
-    required String fallbackMessage,
-  }) async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-    try {
-      final imported = await operation();
-      if (mounted) _openEditor(DataTableModel.fromImported(imported));
-    } on TableImportException catch (error) {
-      if (mounted) _showMessage(error.message);
-    } on Object {
-      if (mounted) _showMessage(fallbackMessage);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+  Future<void> _showMessage(String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -115,12 +179,17 @@ class _DataSourceBottomSheetState extends State<DataSourceBottomSheet> {
               ],
             ),
           ),
+          if (_isLoading)
+            const LinearProgressIndicator(
+              key: ValueKey('data-import-loading'),
+              minHeight: 2,
+            ),
           const Divider(height: 1, color: Color(0xFFE8E8E8)),
           _DataSourceTile(
-            icon: Icons.assignment_outlined,
-            title: 'Colar do Excel',
-            subtitle: 'Cole dados copiados da planilha',
-            onTap: _isLoading ? null : _pasteClipboard,
+            icon: Icons.table_view_outlined,
+            title: 'Importar Excel',
+            subtitle: 'Selecione um arquivo .xlsx do dispositivo',
+            onTap: _isLoading ? null : _importExcel,
           ),
           const Divider(height: 1, indent: 24, endIndent: 24),
           _DataSourceTile(

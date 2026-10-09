@@ -4,19 +4,28 @@ import 'package:flutter/material.dart';
 
 import '../chart_editor/chart_editor_page.dart';
 import '../chart_editor/models/chart_data.dart';
+import '../data_import/data_import_services.dart';
+import '../data_import/table_import_parser.dart';
 import 'models/data_table_model.dart';
 
 class DataEditorPage extends StatefulWidget {
-  const DataEditorPage({super.key, this.initialTable});
+  const DataEditorPage({
+    super.key,
+    this.initialTable,
+    this.clipboardReader = const SystemClipboardReader(),
+    this.tableParser = const TableImportParser(),
+  });
 
   final DataTableModel? initialTable;
+  final ClipboardReader clipboardReader;
+  final TableImportParser tableParser;
 
   @override
   State<DataEditorPage> createState() => _DataEditorPageState();
 }
 
 class _DataEditorPageState extends State<DataEditorPage> {
-  late final DataTableModel _table;
+  late DataTableModel _table;
   late int _categoryColumnId;
   late int _valueColumnId;
 
@@ -64,6 +73,66 @@ class _DataEditorPageState extends State<DataEditorPage> {
           .firstWhere((column) => column.id != _categoryColumnId)
           .id;
     }
+  }
+
+  Future<void> _pasteData() async {
+    FocusScope.of(context).unfocus();
+    try {
+      final content = await widget.clipboardReader.readText();
+      final imported = widget.tableParser.parseClipboard(content);
+      if (!mounted) return;
+
+      if (_hasRelevantData) {
+        final shouldReplace = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Substituir dados?'),
+            content: const Text('Isso substituirá os dados atuais. Continuar?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                key: const ValueKey('confirm-paste-data'),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Continuar'),
+              ),
+            ],
+          ),
+        );
+        if (shouldReplace != true || !mounted) return;
+      }
+
+      _replaceTable(DataTableModel.fromImported(imported));
+    } on TableImportException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } on Object {
+      if (mounted) {
+        _showMessage('Não foi possível acessar a área de transferência.');
+      }
+    }
+  }
+
+  bool get _hasRelevantData {
+    if (_table.columns.length != 2 ||
+        _table.columns[0].name != 'Categoria' ||
+        _table.columns[1].name != 'Valor') {
+      return true;
+    }
+    return _table.rows.any(
+      (row) => row.values.values.any((value) => value.trim().isNotEmpty),
+    );
+  }
+
+  void _replaceTable(DataTableModel table) {
+    setState(() {
+      _table = table;
+      _categoryColumnId = _table.columns.first.id;
+      _valueColumnId = _table.columns.length == 2
+          ? _table.columns[1].id
+          : _table.columns.last.id;
+    });
   }
 
   void _generateChart() {
@@ -175,6 +244,7 @@ class _DataEditorPageState extends State<DataEditorPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _EditableTable(
+                    key: ValueKey(_table),
                     table: _table,
                     valueColumnId: _valueColumnId,
                     onRemoveRow: _removeRow,
@@ -201,6 +271,19 @@ class _DataEditorPageState extends State<DataEditorPage> {
                       spacing: 8,
                       runSpacing: 4,
                       children: [
+                        TextButton.icon(
+                          key: const ValueKey('paste-data'),
+                          onPressed: _pasteData,
+                          icon: const Icon(
+                            Icons.content_paste_rounded,
+                            size: 19,
+                          ),
+                          label: const Text('Colar dados'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF777777),
+                            minimumSize: const Size(48, 48),
+                          ),
+                        ),
                         TextButton.icon(
                           key: const ValueKey('add-row'),
                           onPressed: _addRow,
@@ -280,6 +363,7 @@ class _ProgressIndicator extends StatelessWidget {
 
 class _EditableTable extends StatefulWidget {
   const _EditableTable({
+    super.key,
     required this.table,
     required this.valueColumnId,
     required this.onRemoveRow,
